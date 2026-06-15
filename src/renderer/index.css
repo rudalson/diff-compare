@@ -1,0 +1,167 @@
+/* Design System & Base Styling */
+:root {
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'Fira Code', monospace;
+
+  /* Premium Dark Theme */
+  --bg-app: #0d0f12;
+  --bg-sidebar: #13171c;
+  --bg-panel: rgba(22, 28, 36, 0.7);
+  --bg-panel-solid: #161c24;
+  --bg-active-tab: #1f2733;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color-focus: rgba(99, 102, 241, 0.4);
+  
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  /* Colors */
+  --accent-color: #6366f1; /* Indigo */
+  --accent-color-hover: #4f46e5;
+  
+  /* Diff Highlighting */
+  --diff-unchanged-bg: transparent;
+  --diff-added-bg: rgba(16, 185, 129, 0.12);
+  --diff-added-text: #34d399;
+  --diff-added-border: rgba(16, 185, 129, 0.3);
+  
+  --diff-removed-bg: rgba(239, 68, 68, 0.12);
+  --diff-removed-text: #f87171;
+  --diff-removed-border: rgba(239, 68, 68, 0.3);
+  
+  --diff-modified-bg: rgba(59, 130, 246, 0.12);
+  --diff-modified-text: #60a5fa;
+  --diff-modified-border: rgba(59, 130, 246, 0.3);
+  
+  /* Glassmorphism helpers */
+  --glass-bg: rgba(22, 28, 36, 0.5);
+  --glass-blur: blur(12px);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Light Theme Variables (optional toggle support) */
+.light-theme {
+  --bg-app: #f9fafb;
+  --bg-sidebar: #f3f4f6;
+  --bg-panel: rgba(255, 255, 255, 0.8);
+  --bg-panel-solid: #ffffff;
+  --bg-active-tab: #e5e7eb;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-color-focus: rgba(99, 102, 241, 0.5);
+  
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+
+  /* Diff Highlighting */
+  --diff-added-bg: rgba(16, 185, 129, 0.08);
+  --diff-added-text: #059669;
+  --diff-added-border: rgba(16, 185, 129, 0.2);
+  
+  --diff-removed-bg: rgba(220, 38, 38, 0.08);
+  --diff-removed-text: #dc2626;
+  --diff-removed-border: rgba(220, 38, 38, 0.2);
+  
+  --diff-modified-bg: rgba(37, 99, 235, 0.08);
+  --diff-modified-text: #2563eb;
+  --diff-modified-border: rgba(37, 99, 235, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  user-select: none;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Glass panel */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--glass-shadow);
+  border-radius: 12px;
+}
+
+/* Sync Scroll containers */
+.sync-scroll-container {
+  display: flex;
+  overflow: auto;
+  flex: 1;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel-solid);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+.btn-primary {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+.btn-primary:hover {
+  background: var(--accent-color-hover);
+  border-color: var(--accent-color-hover);
+}
+
+/* Input Fields */
+.input-field {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-field:focus {
+  border-color: var(--accent-color);
+}
