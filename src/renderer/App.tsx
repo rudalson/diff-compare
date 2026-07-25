@@ -125,67 +125,81 @@ export default function App() {
       {/* Main Workspace */}
       <main className="flex-1 overflow-hidden" style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         
-        {/* Render Tab Contents */}
-        {activeTab.type === 'home' && (
-          <div className="flex flex-col items-center justify-center h-full p-8" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '32px' }}>
-            <div className="glass-panel p-8 max-w-xl w-full text-center flex flex-col items-center" style={{ padding: '48px', maxWidth: '600px', width: '100%', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="p-4 bg-indigo-500/10 rounded-2xl mb-6 text-indigo-400" style={{ padding: '16px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '16px', marginBottom: '24px', display: 'inline-flex' }}>
-                <Sparkles size={40} />
-              </div>
-              <h1 className="font-display font-bold text-3xl mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-indigo-100 to-indigo-400" style={{ fontSize: '2rem', marginBottom: '8px', fontFamily: 'var(--font-display)', fontWeight: 800 }}>
-                Antigravity Diff Compare
-              </h1>
-              <p className="text-slate-400 text-sm mb-8 max-w-md" style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '32px', lineHeight: 1.6 }}>
-                A premium, modern folder & file comparison utility. Scan directories, compare changes side-by-side, and sync differences easily.
-              </p>
+        {/* Render Tab Contents (Keep mounted, toggle display to preserve state) */}
+        {tabs.map(tab => {
+          const isActive = tab.id === activeTabId;
+          return (
+            <div
+              key={tab.id}
+              style={{
+                display: isActive ? 'block' : 'none',
+                height: '100%',
+                width: '100%'
+              }}
+            >
+              {tab.type === 'home' && (
+                <div className="flex flex-col items-center justify-center h-full p-8" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '32px' }}>
+                  <div className="glass-panel p-8 max-w-xl w-full text-center flex flex-col items-center" style={{ padding: '48px', maxWidth: '600px', width: '100%', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div className="p-4 bg-indigo-500/10 rounded-2xl mb-6 text-indigo-400" style={{ padding: '16px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '16px', marginBottom: '24px', display: 'inline-flex' }}>
+                      <Sparkles size={40} />
+                    </div>
+                    <h1 className="font-display font-bold text-3xl mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-indigo-100 to-indigo-400" style={{ fontSize: '2rem', marginBottom: '8px', fontFamily: 'var(--font-display)', fontWeight: 800 }}>
+                      Antigravity Diff Compare
+                    </h1>
+                    <p className="text-slate-400 text-sm mb-8 max-w-md" style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '32px', lineHeight: 1.6 }}>
+                      A premium, modern folder & file comparison utility. Scan directories, compare changes side-by-side, and sync differences easily.
+                    </p>
 
-              <div className="grid grid-cols-2 gap-4 w-full" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%' }}>
-                <button
-                  onClick={() => addTab('folder')}
-                  className="btn btn-primary flex-col items-center justify-center p-6 gap-3"
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '12px', height: '100%' }}
-                >
-                  <FolderOpen size={32} />
-                  <div className="text-left" style={{ textAlign: 'center' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Folder Compare</div>
-                    <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '4px' }}>Scan & sync directory trees</div>
-                  </div>
-                </button>
+                    <div className="grid grid-cols-2 gap-4 w-full" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%' }}>
+                      <button
+                        onClick={() => addTab('folder')}
+                        className="btn btn-primary flex-col items-center justify-center p-6 gap-3"
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '12px', height: '100%' }}
+                      >
+                        <FolderOpen size={32} />
+                        <div className="text-left" style={{ textAlign: 'center' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Folder Compare</div>
+                          <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '4px' }}>Scan & sync directory trees</div>
+                        </div>
+                      </button>
 
-                <button
-                  onClick={() => addTab('text')}
-                  className="btn flex-col items-center justify-center p-6 gap-3 hover:border-slate-600"
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '12px', height: '100%' }}
-                >
-                  <FileCode size={32} className="text-indigo-400" />
-                  <div className="text-left" style={{ textAlign: 'center' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Text Compare</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Line-by-line file diff & edit</div>
+                      <button
+                        onClick={() => addTab('text')}
+                        className="btn flex-col items-center justify-center p-6 gap-3 hover:border-slate-600"
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '12px', height: '100%' }}
+                      >
+                        <FileCode size={32} className="text-indigo-400" />
+                        <div className="text-left" style={{ textAlign: 'center' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Text Compare</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Line-by-line file diff & edit</div>
+                        </div>
+                      </button>
+                    </div>
                   </div>
-                </button>
-              </div>
+                </div>
+              )}
+
+              {tab.type === 'folder' && (
+                <FolderCompare
+                  initialLeftPath={tab.leftPath}
+                  initialRightPath={tab.rightPath}
+                  onOpenTextCompare={(left, right) => {
+                    addTab('text', left, right);
+                  }}
+                  updateTitle={(title) => updateTabTitle(tab.id, title)}
+                />
+              )}
+
+              {tab.type === 'text' && (
+                <TextCompare
+                  initialLeftPath={tab.leftPath}
+                  initialRightPath={tab.rightPath}
+                  updateTitle={(title) => updateTabTitle(tab.id, title)}
+                />
+              )}
             </div>
-          </div>
-        )}
-
-        {activeTab.type === 'folder' && (
-          <FolderCompare
-            key={activeTab.id}
-            onOpenTextCompare={(left, right) => {
-              addTab('text', left, right);
-            }}
-            updateTitle={(title) => updateTabTitle(activeTab.id, title)}
-          />
-        )}
-
-        {activeTab.type === 'text' && (
-          <TextCompare
-            key={activeTab.id}
-            initialLeftPath={activeTab.leftPath}
-            initialRightPath={activeTab.rightPath}
-            updateTitle={(title) => updateTabTitle(activeTab.id, title)}
-          />
-        )}
+          );
+        })}
 
       </main>
     </div>

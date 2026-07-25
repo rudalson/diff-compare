@@ -165,3 +165,38 @@ body {
 .input-field:focus {
   border-color: var(--accent-color);
 }
+
+/* Column Resizers */
+.column-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: col-resize;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.column-resizer-right {
+  right: -6px;
+}
+
+.column-resizer::after {
+  content: '';
+  width: 2px;
+  height: 100%;
+  background: var(--border-color);
+  transition: background 0.15s ease, width 0.15s ease, box-shadow 0.15s ease;
+}
+
+.column-resizer:hover::after,
+.column-resizer.is-resizing::after {
+  background: var(--accent-color);
+  width: 3px;
+  box-shadow: 0 0 8px var(--accent-color);
+}
+
+

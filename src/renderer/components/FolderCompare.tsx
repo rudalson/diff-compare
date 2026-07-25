@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FolderOpen, ArrowRight, RefreshCw, AlertCircle, Copy, FileText, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface FolderCompareProps {
   onOpenTextCompare: (leftPath: string, rightPath: string) => void;
   updateTitle: (title: string) => void;
+  initialLeftPath?: string;
+  initialRightPath?: string;
 }
 
 interface CompareRow {
@@ -22,14 +24,59 @@ interface CompareRow {
   depth: number;
 }
 
-export default function FolderCompare({ onOpenTextCompare, updateTitle }: FolderCompareProps) {
-  const [leftPath, setLeftPath] = useState<string>('');
-  const [rightPath, setRightPath] = useState<string>('');
+export default function FolderCompare({ onOpenTextCompare, updateTitle, initialLeftPath, initialRightPath }: FolderCompareProps) {
+  const [leftPath, setLeftPath] = useState<string>(initialLeftPath || '');
+  const [rightPath, setRightPath] = useState<string>(initialRightPath || '');
   const [loading, setLoading] = useState<boolean>(false);
   const [rows, setRows] = useState<CompareRow[]>([]);
   const [filter, setFilter] = useState<'all' | 'diff' | 'leftOnly' | 'rightOnly'>('all');
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (initialLeftPath && initialRightPath) {
+      runCompare();
+    }
+  }, [initialLeftPath, initialRightPath]);
+
+
+  // Column Width States (Default: Size=100px, Modified=200px to ensure 1-line date display)
+  const [sizeWidth, setSizeWidth] = useState<number>(100);
+  const [modifiedWidth, setModifiedWidth] = useState<number>(200);
+  const [resizing, setResizing] = useState<'size' | 'modified' | null>(null);
+
+  const startResize = (col: 'size' | 'modified', e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(col);
+
+    const startX = e.clientX;
+    const startSize = sizeWidth;
+    const startModified = modifiedWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      if (col === 'size') {
+        const newWidth = Math.max(50, Math.min(300, startSize - deltaX));
+        setSizeWidth(newWidth);
+      } else if (col === 'modified') {
+        const newWidth = Math.max(100, Math.min(450, startModified - deltaX));
+        setModifiedWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const gridLayout = `minmax(100px, 1fr) ${sizeWidth}px ${modifiedWidth}px`;
+
 
   const toggleExpand = (path: string) => {
     setExpandedPaths(prev => {
@@ -216,7 +263,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
   const filteredRows = rows.filter(row => {
     if (!isRowVisible(row.relativePath)) return false;
     if (filter === 'all') return true;
-    if (filter === 'diff') return row.status === 'different';
+    if (filter === 'diff') return row.status !== 'identical';
     if (filter === 'leftOnly') return row.status === 'leftOnly';
     if (filter === 'rightOnly') return row.status === 'rightOnly';
     return true;
@@ -243,11 +290,11 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px' }}>
       
       {/* Folder Picker bar */}
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div className="glass-panel" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           
           {/* Left Folder Input */}
           <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
@@ -257,15 +304,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
               placeholder="Left Folder Path"
               value={leftPath}
               onChange={(e) => setLeftPath(e.target.value)}
-              style={{ flex: 1 }}
+              style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
-            <button className="btn" onClick={selectLeftFolder}>
-              <FolderOpen size={16} />
+            <button className="btn" onClick={selectLeftFolder} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
+              <FolderOpen size={14} />
               Browse
             </button>
           </div>
 
-          <ArrowRight size={20} className="text-slate-500" style={{ color: 'var(--text-muted)' }} />
+          <ArrowRight size={16} className="text-slate-500" style={{ color: 'var(--text-muted)' }} />
 
           {/* Right Folder Input */}
           <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
@@ -275,24 +322,24 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
               placeholder="Right Folder Path"
               value={rightPath}
               onChange={(e) => setRightPath(e.target.value)}
-              style={{ flex: 1 }}
+              style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
-            <button className="btn" onClick={selectRightFolder}>
-              <FolderOpen size={16} />
+            <button className="btn" onClick={selectRightFolder} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
+              <FolderOpen size={14} />
               Browse
             </button>
           </div>
 
           {/* Compare Button */}
-          <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '38px', paddingLeft: '20px', paddingRight: '20px' }}>
-            {loading ? <RefreshCw size={16} className="animate-spin" /> : <GitCompare size={16} />}
+          <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '34px', paddingLeft: '16px', paddingRight: '16px', fontSize: '0.8rem' }}>
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <GitCompare size={14} />}
             Compare
           </button>
         </div>
 
         {error && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontSize: '0.85rem' }}>
-            <AlertCircle size={16} />
+            <AlertCircle size={14} />
             <span>{error}</span>
           </div>
         )}
@@ -300,34 +347,34 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
 
       {/* Toolbar / Filters */}
       {rows.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           {/* Filter Buttons */}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
             <button
               onClick={() => setFilter('all')}
               className={`btn ${filter === 'all' ? 'btn-primary' : ''}`}
-              style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem' }}
             >
               All Files ({rows.length})
             </button>
             <button
               onClick={() => setFilter('diff')}
               className={`btn ${filter === 'diff' ? 'btn-primary' : ''}`}
-              style={{ padding: '6px 12px', fontSize: '0.75rem', color: filter === 'diff' ? 'white' : 'var(--diff-modified-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'diff' ? 'white' : 'var(--diff-modified-text)' }}
             >
-              Differences ({rows.filter(r => r.status === 'different').length})
+              Differences ({rows.filter(r => r.status !== 'identical').length})
             </button>
             <button
               onClick={() => setFilter('leftOnly')}
               className={`btn ${filter === 'leftOnly' ? 'btn-primary' : ''}`}
-              style={{ padding: '6px 12px', fontSize: '0.75rem', color: filter === 'leftOnly' ? 'white' : 'var(--diff-removed-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'leftOnly' ? 'white' : 'var(--diff-removed-text)' }}
             >
               Left Only ({rows.filter(r => r.status === 'leftOnly').length})
             </button>
             <button
               onClick={() => setFilter('rightOnly')}
               className={`btn ${filter === 'rightOnly' ? 'btn-primary' : ''}`}
-              style={{ padding: '6px 12px', fontSize: '0.75rem', color: filter === 'rightOnly' ? 'white' : 'var(--diff-added-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'rightOnly' ? 'white' : 'var(--diff-added-text)' }}
             >
               Right Only ({rows.filter(r => r.status === 'rightOnly').length})
             </button>
@@ -351,11 +398,29 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
             
             {/* Headers */}
             <div style={{ display: 'flex', background: 'rgba(0,0,0,0.25)', borderBottom: '1px solid var(--border-color)', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.8rem', userSelect: 'none' }}>
-              {/* Left Header (46% width) */}
-              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: '1fr 90px 140px', padding: '10px 16px' }}>
-                <div>Left Folder Contents</div>
-                <div style={{ textAlign: 'right' }}>Size</div>
-                <div style={{ paddingLeft: '24px' }}>Modified</div>
+              {/* Left Header */}
+              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 16px', position: 'relative' }}>
+                <div style={{ padding: '10px 8px 10px 0', position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Left Folder Contents</span>
+                  <div
+                    className={`column-resizer column-resizer-right ${resizing === 'size' ? 'is-resizing' : ''}`}
+                    onMouseDown={(e) => startResize('size', e)}
+                    onDoubleClick={(e) => { e.stopPropagation(); setSizeWidth(100); }}
+                    title="Drag to resize Size column (Double-click to reset)"
+                  />
+                </div>
+                <div style={{ padding: '10px 8px 10px 0', textAlign: 'right', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Size</span>
+                  <div
+                    className={`column-resizer column-resizer-right ${resizing === 'modified' ? 'is-resizing' : ''}`}
+                    onMouseDown={(e) => startResize('modified', e)}
+                    onDoubleClick={(e) => { e.stopPropagation(); setModifiedWidth(200); }}
+                    title="Drag to resize Modified column (Double-click to reset)"
+                  />
+                </div>
+                <div style={{ padding: '10px 0 10px 16px', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Modified</span>
+                </div>
               </div>
               
               {/* Actions Divider */}
@@ -363,29 +428,51 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                 Sync
               </div>
 
-              {/* Right Header (46% width) */}
-              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: '1fr 90px 140px', padding: '10px 16px' }}>
-                <div>Right Folder Contents</div>
-                <div style={{ textAlign: 'right' }}>Size</div>
-                <div style={{ paddingLeft: '24px' }}>Modified</div>
+              {/* Right Header */}
+              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 16px', position: 'relative' }}>
+                <div style={{ padding: '10px 8px 10px 0', position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Right Folder Contents</span>
+                  <div
+                    className={`column-resizer column-resizer-right ${resizing === 'size' ? 'is-resizing' : ''}`}
+                    onMouseDown={(e) => startResize('size', e)}
+                    onDoubleClick={(e) => { e.stopPropagation(); setSizeWidth(100); }}
+                    title="Drag to resize Size column (Double-click to reset)"
+                  />
+                </div>
+                <div style={{ padding: '10px 8px 10px 0', textAlign: 'right', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Size</span>
+                  <div
+                    className={`column-resizer column-resizer-right ${resizing === 'modified' ? 'is-resizing' : ''}`}
+                    onMouseDown={(e) => startResize('modified', e)}
+                    onDoubleClick={(e) => { e.stopPropagation(); setModifiedWidth(200); }}
+                    title="Drag to resize Modified column (Double-click to reset)"
+                  />
+                </div>
+                <div style={{ padding: '10px 0 10px 16px', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Modified</span>
+                </div>
               </div>
             </div>
 
             {/* List Body */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {filteredRows.map((row, idx) => {
-                let rowBg = 'transparent';
-                let textColor = 'var(--text-primary)';
-                
+                let leftBg = 'transparent';
+                let rightBg = 'transparent';
+                let leftColor = 'var(--text-primary)';
+                let rightColor = 'var(--text-primary)';
+
                 if (row.status === 'different') {
-                  rowBg = 'var(--diff-modified-bg)';
-                  textColor = 'var(--diff-modified-text)';
+                  leftBg = 'var(--diff-modified-bg)';
+                  rightBg = 'var(--diff-modified-bg)';
+                  leftColor = 'var(--diff-modified-text)';
+                  rightColor = 'var(--diff-modified-text)';
                 } else if (row.status === 'leftOnly') {
-                  rowBg = 'var(--diff-removed-bg)';
-                  textColor = 'var(--diff-removed-text)';
+                  leftBg = 'var(--diff-removed-bg)';
+                  leftColor = 'var(--diff-removed-text)';
                 } else if (row.status === 'rightOnly') {
-                  rowBg = 'var(--diff-added-bg)';
-                  textColor = 'var(--diff-added-text)';
+                  rightBg = 'var(--diff-added-bg)';
+                  rightColor = 'var(--diff-added-text)';
                 }
 
                 return (
@@ -404,19 +491,17 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                     style={{
                       display: 'flex',
                       borderBottom: '1px solid var(--border-color)',
-                      backgroundColor: rowBg,
-                      color: textColor,
                       fontSize: '0.8rem',
-                      cursor: row.isDirectory ? 'pointer' : 'pointer',
+                      cursor: 'pointer',
                       alignItems: 'stretch'
                     }}
                     className="hover:bg-white/5 transition-colors"
                   >
                     {/* Left Side */}
-                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: '1fr 90px 140px', padding: '8px 16px', alignItems: 'center' }}>
+                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: leftBg, color: leftColor }}>
                       {row.leftExists ? (
                         <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
                             {row.isDirectory ? (
                               <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
                                 {expandedPaths.has(row.relativePath) ? (
@@ -433,20 +518,18 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                             ) : (
                               <FileText size={14} style={{ flexShrink: 0 }} />
                             )}
-                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400 }}>{row.name}</span>
+                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
                           </div>
-                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
                             {!row.isDirectory ? formatSize(row.leftSize) : ''}
                           </div>
-                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '24px' }}>
+                          <div style={{ color: leftColor !== 'var(--text-primary)' ? leftColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                             {formatDate(row.leftMtime)}
                           </div>
                         </>
                       ) : (
                         <>
-                          <div style={{ opacity: 0.25, fontStyle: 'italic', paddingLeft: `${row.depth * 16}px` }}>
-                            (No file on left)
-                          </div>
+                          <div></div>
                           <div></div>
                           <div></div>
                         </>
@@ -454,7 +537,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                     </div>
 
                     {/* Actions Spacer/Buttons */}
-                    <div style={{ width: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+                    <div style={{ width: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
                       {!row.isDirectory && (
                         <>
                           <button
@@ -462,44 +545,46 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                             disabled={!row.leftExists}
                             title="Copy left file to right"
                             style={{
-                              padding: '4px',
-                              borderRadius: '4px',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
                               background: 'rgba(255,255,255,0.05)',
                               border: '1px solid var(--border-color)',
                               cursor: row.leftExists ? 'pointer' : 'not-allowed',
                               color: 'var(--text-primary)',
                               display: 'flex',
-                              alignItems: 'center'
+                              alignItems: 'center',
+                              opacity: row.leftExists ? 1 : 0.2
                             }}
                           >
-                            <ArrowRight size={12} />
+                            <ArrowRight size={11} />
                           </button>
                           <button
                             onClick={() => handleSyncFile(row, 'right-to-left')}
                             disabled={!row.rightExists}
                             title="Copy right file to left"
                             style={{
-                              padding: '4px',
-                              borderRadius: '4px',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
                               background: 'rgba(255,255,255,0.05)',
                               border: '1px solid var(--border-color)',
                               cursor: row.rightExists ? 'pointer' : 'not-allowed',
                               color: 'var(--text-primary)',
                               display: 'flex',
-                              alignItems: 'center'
+                              alignItems: 'center',
+                              opacity: row.rightExists ? 1 : 0.2
                             }}
                           >
-                            <ArrowRight size={12} style={{ transform: 'rotate(180deg)' }} />
+                            <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
                           </button>
                         </>
                       )}
                     </div>
 
                     {/* Right Side */}
-                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: '1fr 90px 140px', padding: '8px 16px', alignItems: 'center' }}>
+                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: rightBg, color: rightColor }}>
                       {row.rightExists ? (
                         <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
                             {row.isDirectory ? (
                               <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
                                 {expandedPaths.has(row.relativePath) ? (
@@ -516,20 +601,18 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle }: Folder
                             ) : (
                               <FileText size={14} style={{ flexShrink: 0 }} />
                             )}
-                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400 }}>{row.name}</span>
+                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
                           </div>
-                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
                             {!row.isDirectory ? formatSize(row.rightSize) : ''}
                           </div>
-                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '24px' }}>
+                          <div style={{ color: rightColor !== 'var(--text-primary)' ? rightColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                             {formatDate(row.rightMtime)}
                           </div>
                         </>
                       ) : (
                         <>
-                          <div style={{ opacity: 0.25, fontStyle: 'italic', paddingLeft: `${row.depth * 16}px` }}>
-                            (No file on right)
-                          </div>
+                          <div></div>
                           <div></div>
                           <div></div>
                         </>

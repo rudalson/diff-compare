@@ -194,11 +194,11 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px' }}>
       
       {/* File Path Picker bar */}
-      <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div className="glass-panel" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           
           {/* Left File Input */}
           <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
@@ -208,15 +208,15 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
               placeholder="Left File Path"
               value={leftPath}
               onChange={(e) => setLeftPath(e.target.value)}
-              style={{ flex: 1 }}
+              style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
-            <button className="btn" onClick={selectLeftFile}>
-              <FolderOpen size={16} />
+            <button className="btn" onClick={selectLeftFile} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
+              <FolderOpen size={14} />
               Browse
             </button>
           </div>
 
-          <ArrowLeftRight size={18} className="text-slate-500" style={{ color: 'var(--text-muted)' }} />
+          <ArrowLeftRight size={16} className="text-slate-500" style={{ color: 'var(--text-muted)' }} />
 
           {/* Right File Input */}
           <div style={{ flex: 1, display: 'flex', gap: '8px' }}>
@@ -226,24 +226,24 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
               placeholder="Right File Path"
               value={rightPath}
               onChange={(e) => setRightPath(e.target.value)}
-              style={{ flex: 1 }}
+              style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
-            <button className="btn" onClick={selectRightFile}>
-              <FolderOpen size={16} />
+            <button className="btn" onClick={selectRightFile} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
+              <FolderOpen size={14} />
               Browse
             </button>
           </div>
 
           {/* Compare Button */}
-          <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '38px' }}>
-            {loading ? <RefreshCw size={16} className="animate-spin" /> : <ArrowLeftRight size={16} />}
+          <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '34px', paddingLeft: '16px', paddingRight: '16px', fontSize: '0.8rem' }}>
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
             Compare
           </button>
         </div>
 
         {error && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontSize: '0.85rem' }}>
-            <AlertCircle size={16} />
+            <AlertCircle size={14} />
             <span>{error}</span>
           </div>
         )}
@@ -251,7 +251,7 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
       {/* Stats and Saves Panel */}
       {diffRows.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           
           {/* Left save button */}
           <button
