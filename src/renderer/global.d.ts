@@ -33,6 +33,7 @@ interface Window {
     readFile: (filePath: string) => Promise<string>;
     writeFile: (filePath: string, content: string) => Promise<boolean>;
     copyFile: (srcPath: string, destPath: string) => Promise<boolean>;
+    deleteItem: (itemPath: string) => Promise<boolean>;
     scanDirectory: (dirPath: string) => Promise<FileNode[]>;
     compareFiles: (leftPath: string, rightPath: string) => Promise<DiffResult>;
   };

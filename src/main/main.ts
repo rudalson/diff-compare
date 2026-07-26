@@ -115,6 +115,22 @@ ipcMain.handle('copy-file', async (_, srcPath: string, destPath: string) => {
   }
 });
 
+// Delete File or Directory
+ipcMain.handle('delete-item', async (_, itemPath: string) => {
+  try {
+    if (!fs.existsSync(itemPath)) return true;
+    const stat = fs.statSync(itemPath);
+    if (stat.isDirectory()) {
+      fs.rmSync(itemPath, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(itemPath);
+    }
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to delete item: ${error.message}`);
+  }
+});
+
 // Helper interface for directory scanning
 interface FileNode {
   name: string;
@@ -131,32 +147,40 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
     const results: FileNode[] = [];
 
     const walk = (currentDir: string) => {
-      const files = fs.readdirSync(currentDir);
-      for (const file of files) {
-        const fullPath = path.join(currentDir, file);
-        const relativePath = path.relative(dirPath, fullPath).replace(/\\/g, '/');
-        const stat = fs.statSync(fullPath);
-        
-        if (stat.isDirectory()) {
-          results.push({
-            name: file,
-            path: fullPath,
-            relativePath,
-            isDirectory: true,
-            size: 0,
-            mtimeMs: stat.mtimeMs,
-          });
-          walk(fullPath);
-        } else {
-          results.push({
-            name: file,
-            path: fullPath,
-            relativePath,
-            isDirectory: false,
-            size: stat.size,
-            mtimeMs: stat.mtimeMs,
-          });
+      try {
+        const files = fs.readdirSync(currentDir);
+        for (const file of files) {
+          try {
+            const fullPath = path.join(currentDir, file);
+            const relativePath = path.relative(dirPath, fullPath).replace(/\\/g, '/');
+            const stat = fs.statSync(fullPath);
+            
+            if (stat.isDirectory()) {
+              results.push({
+                name: file,
+                path: fullPath,
+                relativePath,
+                isDirectory: true,
+                size: 0,
+                mtimeMs: stat.mtimeMs,
+              });
+              walk(fullPath);
+            } else {
+              results.push({
+                name: file,
+                path: fullPath,
+                relativePath,
+                isDirectory: false,
+                size: stat.size,
+                mtimeMs: stat.mtimeMs,
+              });
+            }
+          } catch (e) {
+            // Ignore single file/folder stat or access errors
+          }
         }
+      } catch (e) {
+        // Ignore directory read errors (e.g. permission denied)
       }
     };
 

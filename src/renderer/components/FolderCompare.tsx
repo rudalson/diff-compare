@@ -1,5 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FolderOpen, ArrowRight, RefreshCw, AlertCircle, Copy, FileText, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown } from 'lucide-react';
+import { FolderOpen, ArrowRight, RefreshCw, AlertCircle, Copy, FileText, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown, Trash2, X } from 'lucide-react';
+
+interface ContextMenuState {
+  mouseX: number;
+  mouseY: number;
+  row: CompareRow;
+  side: 'left' | 'right';
+  targetPath: string;
+}
 
 interface FolderCompareProps {
   onOpenTextCompare: (leftPath: string, rightPath: string) => void;
@@ -45,6 +53,141 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   } | null>(null);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
+  // Context Menu & Delete Confirm Modal States
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    path: string;
+    name: string;
+    isDirectory: boolean;
+    side: 'left' | 'right';
+  } | null>(null);
+
+  // Multi-Select States
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const [deleteConfirmTargetBatch, setDeleteConfirmTargetBatch] = useState<{
+    path: string;
+    name: string;
+    isDirectory: boolean;
+    side: 'left' | 'right';
+  }[] | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleRowClick = (e: React.MouseEvent, row: CompareRow) => {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedPaths(prev => {
+        const next = new Set(prev);
+        if (next.has(row.relativePath)) {
+          next.delete(row.relativePath);
+        } else {
+          next.add(row.relativePath);
+        }
+        return next;
+      });
+      setLastSelectedPath(row.relativePath);
+    } else if (e.shiftKey && lastSelectedPath) {
+      const startIdx = filteredRows.findIndex(r => r.relativePath === lastSelectedPath);
+      const endIdx = filteredRows.findIndex(r => r.relativePath === row.relativePath);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const min = Math.min(startIdx, endIdx);
+        const max = Math.max(startIdx, endIdx);
+        const rangeSet = new Set(selectedPaths);
+        for (let i = min; i <= max; i++) {
+          rangeSet.add(filteredRows[i].relativePath);
+        }
+        setSelectedPaths(rangeSet);
+      }
+    } else {
+      if (row.isDirectory) {
+        toggleExpand(row.relativePath);
+      }
+      setSelectedPaths(new Set([row.relativePath]));
+      setLastSelectedPath(row.relativePath);
+    }
+  };
+
+  const handleSyncBatch = async (direction: 'left-to-right' | 'right-to-left') => {
+    if (syncingState || selectedPaths.size === 0) return;
+
+    const selectedRows = rows.filter(r => selectedPaths.has(r.relativePath) && !r.isDirectory);
+    const eligibleRows = selectedRows.filter(r => direction === 'left-to-right' ? r.leftExists : r.rightExists);
+
+    if (eligibleRows.length === 0) {
+      setError('No eligible files found to copy in the selected items.');
+      return;
+    }
+
+    setSyncingState({
+      relativePath: 'batch',
+      name: `${eligibleRows.length} files`,
+      direction,
+    });
+    setError(null);
+    setSyncSuccessMsg(null);
+
+    let copiedCount = 0;
+    try {
+      for (const row of eligibleRows) {
+        const src = direction === 'left-to-right' ? row.leftFullPath : row.rightFullPath;
+        const dest = direction === 'left-to-right' ? row.rightFullPath : row.leftFullPath;
+        await window.api.copyFile(src, dest);
+        copiedCount++;
+        setSyncSuccessMsg(`Copying files (${copiedCount}/${eligibleRows.length})...`);
+      }
+
+      await runCompare(true);
+      const dirLabel = direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left';
+      setSyncSuccessMsg(`Copied ${copiedCount} files (${dirLabel}) successfully.`);
+      setTimeout(() => setSyncSuccessMsg(null), 3500);
+    } catch (err: any) {
+      setError(`Batch sync failed after copying ${copiedCount} files: ${err.message}`);
+    } finally {
+      setSyncingState(null);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!deleteConfirmTargetBatch || deleteConfirmTargetBatch.length === 0) return;
+    setLoading(true);
+    let deletedCount = 0;
+    try {
+      for (const target of deleteConfirmTargetBatch) {
+        await window.api.deleteItem(target.path);
+        deletedCount++;
+      }
+      setSyncSuccessMsg(`Deleted ${deletedCount} items successfully.`);
+      setTimeout(() => setSyncSuccessMsg(null), 3500);
+      setSelectedPaths(new Set());
+      setDeleteConfirmTargetBatch(null);
+      await runCompare(true);
+    } catch (err: any) {
+      setError(`Batch delete failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!deleteConfirmTarget) return;
+    try {
+      setLoading(true);
+      await window.api.deleteItem(deleteConfirmTarget.path);
+      setSyncSuccessMsg(`"${deleteConfirmTarget.name}" deleted successfully.`);
+      setTimeout(() => setSyncSuccessMsg(null), 3000);
+      setDeleteConfirmTarget(null);
+      await runCompare(true);
+    } catch (err: any) {
+      setError(`Delete failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // History states for auto-complete datalists
   const [leftHistory, setLeftHistory] = useState<string[]>(() => {
     try {
@@ -84,10 +227,10 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   };
 
   useEffect(() => {
-    if (initialLeftPath && initialRightPath) {
+    if (leftPath && rightPath) {
       runCompare();
     }
-  }, [initialLeftPath, initialRightPath]);
+  }, []);
 
 
   // Column Width States (Default: Size=100px, Modified=200px to ensure 1-line date display)
@@ -373,6 +516,23 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     });
   }, [rows, filter, expandedPaths]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        const allPaths = new Set(filteredRows.map(r => r.relativePath));
+        setSelectedPaths(allPaths);
+      } else if (e.key === 'Escape') {
+        setSelectedPaths(new Set());
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filteredRows]);
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -495,7 +655,59 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               Right Only ({rows.filter(r => r.status === 'rightOnly').length})
             </button>
           </div>
-          
+
+          {/* Bulk Action Bar */}
+          {selectedPaths.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.35)', borderRadius: '6px', padding: '3px 10px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a5b4fc' }}>
+                {selectedPaths.size} selected
+              </span>
+              <button
+                className="btn"
+                onClick={() => handleSyncBatch('left-to-right')}
+                disabled={!!syncingState}
+                style={{ padding: '2px 8px', fontSize: '0.75rem', background: '#6366f1', borderColor: '#6366f1', color: 'white', height: '24px' }}
+                title="Copy all selected left files to right"
+              >
+                <ArrowRight size={12} />
+                Copy Left ➔ Right
+              </button>
+              <button
+                className="btn"
+                onClick={() => handleSyncBatch('right-to-left')}
+                disabled={!!syncingState}
+                style={{ padding: '2px 8px', fontSize: '0.75rem', background: '#6366f1', borderColor: '#6366f1', color: 'white', height: '24px' }}
+                title="Copy all selected right files to left"
+              >
+                <ArrowRight size={12} style={{ transform: 'rotate(180deg)' }} />
+                Copy Right ➔ Left
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  const targetsToDelete: { path: string; name: string; isDirectory: boolean; side: 'left' | 'right' }[] = [];
+                  rows.filter(r => selectedPaths.has(r.relativePath)).forEach(r => {
+                    if (r.leftExists) targetsToDelete.push({ path: r.leftFullPath, name: r.name, isDirectory: r.isDirectory, side: 'left' });
+                    if (r.rightExists) targetsToDelete.push({ path: r.rightFullPath, name: r.name, isDirectory: r.isDirectory, side: 'right' });
+                  });
+                  setDeleteConfirmTargetBatch(targetsToDelete);
+                }}
+                style={{ padding: '2px 8px', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.2)', borderColor: '#ef4444', color: '#f87171', height: '24px' }}
+                title="Delete all selected files/folders"
+              >
+                <Trash2 size={12} />
+                Delete
+              </button>
+              <button
+                onClick={() => setSelectedPaths(new Set())}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px', marginLeft: '4px' }}
+                title="Clear selection (Esc)"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {syncingState && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>
@@ -586,7 +798,18 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
 
             {/* List Body */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {filteredRows.map((row, idx) => {
+              {filteredRows.length === 0 ? (
+                <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <FolderOpen size={32} style={{ opacity: 0.5 }} />
+                  <span>
+                    {filter === 'all'
+                      ? 'No items to show. Click a folder in the list to expand.'
+                      : `No items match the current filter ("${filter}").`}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  {filteredRows.map((row, idx) => {
                 let leftBg = 'transparent';
                 let rightBg = 'transparent';
                 let leftColor = 'var(--text-primary)';
@@ -605,6 +828,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                   rightColor = 'var(--diff-added-text)';
                 }
 
+                const isSelected = selectedPaths.has(row.relativePath);
+
                 return (
                   <div
                     key={idx}
@@ -613,22 +838,38 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                         onOpenTextCompare(row.leftFullPath, row.rightFullPath);
                       }
                     }}
-                    onClick={() => {
-                      if (row.isDirectory) {
-                        toggleExpand(row.relativePath);
-                      }
-                    }}
+                    onClick={(e) => handleRowClick(e, row)}
                     style={{
                       display: 'flex',
                       borderBottom: '1px solid var(--border-color)',
                       fontSize: '0.8rem',
                       cursor: 'pointer',
-                      alignItems: 'stretch'
+                      alignItems: 'stretch',
+                      boxShadow: isSelected ? 'inset 0 0 0 1px #6366f1' : 'none',
                     }}
                     className="hover:bg-white/5 transition-colors"
                   >
                     {/* Left Side */}
-                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: leftBg, color: leftColor }}>
+                    <div
+                      onContextMenu={(e) => {
+                        if (row.leftExists) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!selectedPaths.has(row.relativePath)) {
+                            setSelectedPaths(new Set([row.relativePath]));
+                            setLastSelectedPath(row.relativePath);
+                          }
+                          setContextMenu({
+                            mouseX: e.clientX,
+                            mouseY: e.clientY,
+                            row,
+                            side: 'left',
+                            targetPath: row.leftFullPath,
+                          });
+                        }
+                      }}
+                      style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.22)' : leftBg, color: leftColor }}
+                    >
                       {row.leftExists ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
@@ -724,7 +965,26 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                     </div>
 
                     {/* Right Side */}
-                    <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: rightBg, color: rightColor }}>
+                    <div
+                      onContextMenu={(e) => {
+                        if (row.rightExists) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!selectedPaths.has(row.relativePath)) {
+                            setSelectedPaths(new Set([row.relativePath]));
+                            setLastSelectedPath(row.relativePath);
+                          }
+                          setContextMenu({
+                            mouseX: e.clientX,
+                            mouseY: e.clientY,
+                            row,
+                            side: 'right',
+                            targetPath: row.rightFullPath,
+                          });
+                        }
+                      }}
+                      style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.22)' : rightBg, color: rightColor }}
+                    >
                       {row.rightExists ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
@@ -764,11 +1024,275 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                   </div>
                 );
               })}
-            </div>
+            </>
+          )}
+        </div>
 
           </div>
         )}
       </div>
+      {/* Context Menu Popup */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            top: Math.min(contextMenu.mouseY, window.innerHeight - 210),
+            left: Math.min(contextMenu.mouseX, window.innerWidth - 240),
+            zIndex: 1000,
+            minWidth: '220px',
+            background: 'rgba(22, 28, 36, 0.96)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+            padding: '6px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ padding: '6px 10px', fontSize: '0.75rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <span className="truncate font-semibold text-slate-200" style={{ maxWidth: '140px' }}>
+              {selectedPaths.size > 1 ? `${selectedPaths.size} items selected` : contextMenu.row.name}
+            </span>
+            <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', fontWeight: 600 }}>
+              {contextMenu.side === 'left' ? 'Left' : 'Right'}
+            </span>
+          </div>
+
+          {selectedPaths.size <= 1 && !contextMenu.row.isDirectory && (
+            <button
+              className="btn-menu-item"
+              onClick={() => {
+                onOpenTextCompare(contextMenu.row.leftFullPath, contextMenu.row.rightFullPath);
+                setContextMenu(null);
+              }}
+            >
+              <FileCode size={14} className="text-indigo-400" />
+              <span>Open File Compare</span>
+            </button>
+          )}
+
+          <button
+            className="btn-menu-item"
+            onClick={() => {
+              if (selectedPaths.size > 1) {
+                handleSyncBatch(contextMenu.side === 'left' ? 'left-to-right' : 'right-to-left');
+              } else {
+                handleSyncFile(contextMenu.row, contextMenu.side === 'left' ? 'left-to-right' : 'right-to-left');
+              }
+              setContextMenu(null);
+            }}
+          >
+            <ArrowRight size={14} style={{ transform: contextMenu.side === 'right' ? 'rotate(180deg)' : 'none' }} />
+            <span>Copy {selectedPaths.size > 1 ? `${selectedPaths.size} items` : ''} to {contextMenu.side === 'left' ? 'Right' : 'Left'}</span>
+          </button>
+
+          <button
+            className="btn-menu-item"
+            onClick={() => {
+              if (selectedPaths.size > 1) {
+                const paths = rows.filter(r => selectedPaths.has(r.relativePath)).map(r => contextMenu.side === 'left' ? r.leftFullPath : r.rightFullPath).filter(Boolean).join('\n');
+                navigator.clipboard.writeText(paths);
+              } else {
+                navigator.clipboard.writeText(contextMenu.targetPath);
+              }
+              setSyncSuccessMsg('Path(s) copied to clipboard!');
+              setTimeout(() => setSyncSuccessMsg(null), 2500);
+              setContextMenu(null);
+            }}
+          >
+            <Copy size={14} />
+            <span>Copy Path{selectedPaths.size > 1 ? 's' : ''}</span>
+          </button>
+
+          <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }} />
+
+          <button
+            className="btn-menu-item btn-menu-danger"
+            onClick={() => {
+              if (selectedPaths.size > 1) {
+                const targetsToDelete: { path: string; name: string; isDirectory: boolean; side: 'left' | 'right' }[] = [];
+                rows.filter(r => selectedPaths.has(r.relativePath)).forEach(r => {
+                  if (contextMenu.side === 'left' && r.leftExists) targetsToDelete.push({ path: r.leftFullPath, name: r.name, isDirectory: r.isDirectory, side: 'left' });
+                  if (contextMenu.side === 'right' && r.rightExists) targetsToDelete.push({ path: r.rightFullPath, name: r.name, isDirectory: r.isDirectory, side: 'right' });
+                });
+                setDeleteConfirmTargetBatch(targetsToDelete);
+              } else {
+                setDeleteConfirmTarget({
+                  path: contextMenu.targetPath,
+                  name: contextMenu.row.name,
+                  isDirectory: contextMenu.row.isDirectory,
+                  side: contextMenu.side,
+                });
+              }
+              setContextMenu(null);
+            }}
+          >
+            <Trash2 size={14} />
+            <span>Delete {selectedPaths.size > 1 ? `${selectedPaths.size} Items` : (contextMenu.row.isDirectory ? 'Folder' : 'File')}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Single Item) */}
+      {deleteConfirmTarget && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div className="glass-panel" style={{
+            width: '420px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            borderRadius: '12px',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            background: '#161c24',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ef4444' }}>
+              <Trash2 size={22} />
+              <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Delete Confirmation</span>
+            </div>
+
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+              Are you sure you want to delete this {deleteConfirmTarget.isDirectory ? 'folder' : 'file'} from <strong>{deleteConfirmTarget.side === 'left' ? 'Left' : 'Right'}</strong> directory?
+              <div style={{
+                marginTop: '10px',
+                padding: '10px 12px',
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: '6px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.75rem',
+                color: '#f87171',
+                wordBreak: 'break-all',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+              }}>
+                {deleteConfirmTarget.path}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button
+                className="btn"
+                onClick={() => setDeleteConfirmTarget(null)}
+                style={{ padding: '6px 16px', fontSize: '0.85rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={handleDeleteItem}
+                style={{
+                  padding: '6px 16px',
+                  fontSize: '0.85rem',
+                  background: '#ef4444',
+                  borderColor: '#ef4444',
+                  color: 'white',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Batch Items) */}
+      {deleteConfirmTargetBatch && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div className="glass-panel" style={{
+            width: '440px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            borderRadius: '12px',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            background: '#161c24',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ef4444' }}>
+              <Trash2 size={22} />
+              <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Batch Delete Confirmation</span>
+            </div>
+
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+              Are you sure you want to delete <strong>{deleteConfirmTargetBatch.length} selected items</strong>?
+              <div style={{
+                marginTop: '10px',
+                maxHeight: '140px',
+                overflowY: 'auto',
+                padding: '8px 12px',
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: '6px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.72rem',
+                color: '#f87171',
+                wordBreak: 'break-all',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+              }}>
+                {deleteConfirmTargetBatch.slice(0, 10).map((t, i) => (
+                  <div key={i} className="truncate">[{t.side.toUpperCase()}] {t.path}</div>
+                ))}
+                {deleteConfirmTargetBatch.length > 10 && (
+                  <div style={{ fontStyle: 'italic', opacity: 0.7 }}>...and {deleteConfirmTargetBatch.length - 10} more items</div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button
+                className="btn"
+                onClick={() => setDeleteConfirmTargetBatch(null)}
+                style={{ padding: '6px 16px', fontSize: '0.85rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={handleBatchDelete}
+                style={{
+                  padding: '6px 16px',
+                  fontSize: '0.85rem',
+                  background: '#ef4444',
+                  borderColor: '#ef4444',
+                  color: 'white',
+                }}
+              >
+                Delete {deleteConfirmTargetBatch.length} Items
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
