@@ -16,8 +16,12 @@ interface DiffRow {
 }
 
 export default function TextCompare({ initialLeftPath, initialRightPath, updateTitle }: TextCompareProps) {
-  const [leftPath, setLeftPath] = useState<string>(initialLeftPath || '');
-  const [rightPath, setRightPath] = useState<string>(initialRightPath || '');
+  const [leftPath, setLeftPath] = useState<string>(() => {
+    return initialLeftPath || localStorage.getItem('tinydiff_last_left_file') || '';
+  });
+  const [rightPath, setRightPath] = useState<string>(() => {
+    return initialRightPath || localStorage.getItem('tinydiff_last_right_file') || '';
+  });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [diffRows, setDiffRows] = useState<DiffRow[]>([]);
@@ -31,6 +35,12 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   const rightLineNumbersRef = useRef<HTMLDivElement>(null);
   const activeScroll = useRef<'left' | 'right' | null>(null);
 
+  const saveFileHistory = (side: 'left' | 'right', pathStr: string) => {
+    if (!pathStr) return;
+    const lastKey = side === 'left' ? 'tinydiff_last_left_file' : 'tinydiff_last_right_file';
+    localStorage.setItem(lastKey, pathStr);
+  };
+
   useEffect(() => {
     if (initialLeftPath && initialRightPath) {
       runCompare();
@@ -38,18 +48,22 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   }, [initialLeftPath, initialRightPath]);
 
   const selectLeftFile = async () => {
-    const path = await window.api.selectFile();
+    const startPath = leftPath || localStorage.getItem('tinydiff_last_left_file') || undefined;
+    const path = await window.api.selectFile(startPath);
     if (path) {
       setLeftPath(path);
+      saveFileHistory('left', path);
       const filename = path.split(/[\\/]/).pop() || 'File';
       updateTitle(`TC: ${filename}`);
     }
   };
 
   const selectRightFile = async () => {
-    const path = await window.api.selectFile();
+    const startPath = rightPath || localStorage.getItem('tinydiff_last_right_file') || undefined;
+    const path = await window.api.selectFile(startPath);
     if (path) {
       setRightPath(path);
+      saveFileHistory('right', path);
       if (leftPath) {
         const fileLeft = leftPath.split(/[\\/]/).pop() || 'File';
         const fileRight = path.split(/[\\/]/).pop() || 'File';

@@ -11,7 +11,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Antigravity Diff Compare',
+    title: 'TinyDiff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -48,11 +48,15 @@ app.on('window-all-closed', () => {
 // --- IPC IPC HANDLERS ---
 
 // Select Directory Dialog
-ipcMain.handle('select-directory', async () => {
+ipcMain.handle('select-directory', async (_, defaultPath?: string) => {
   if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const options: Electron.OpenDialogOptions = {
     properties: ['openDirectory'],
-  });
+  };
+  if (defaultPath && fs.existsSync(defaultPath)) {
+    options.defaultPath = defaultPath;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, options);
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
@@ -60,11 +64,15 @@ ipcMain.handle('select-directory', async () => {
 });
 
 // Select File Dialog
-ipcMain.handle('select-file', async () => {
+ipcMain.handle('select-file', async (_, defaultPath?: string) => {
   if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const options: Electron.OpenDialogOptions = {
     properties: ['openFile'],
-  });
+  };
+  if (defaultPath && fs.existsSync(defaultPath)) {
+    options.defaultPath = defaultPath;
+  }
+  const result = await dialog.showOpenDialog(mainWindow, options);
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
@@ -87,6 +95,23 @@ ipcMain.handle('write-file', async (_, filePath: string, content: string) => {
     return true;
   } catch (error: any) {
     throw new Error(`Failed to write file: ${error.message}`);
+  }
+});
+
+// Copy File (Fast OS native copy for large binary files + timestamp preservation)
+ipcMain.handle('copy-file', async (_, srcPath: string, destPath: string) => {
+  try {
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    await fs.promises.copyFile(srcPath, destPath);
+    // Preserve source file's access and modification timestamps
+    const stat = fs.statSync(srcPath);
+    fs.utimesSync(destPath, stat.atime, stat.mtime);
+    return true;
+  } catch (error: any) {
+    throw new Error(`Failed to copy file: ${error.message}`);
   }
 });
 

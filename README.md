@@ -1,4 +1,4 @@
-# Antigravity Diff Compare
+# TinyDiff
 
 <p align="center">
   <img src="https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron Badge" />
@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite Badge" />
 </p>
 
-**Antigravity Diff Compare**는 대표적인 비교 유틸리티인 *Beyond Compare*에서 영감을 받아 제작된 현대적이고 세련된 디자인의 데스크톱 파일 및 폴더 비교 도구입니다.
+**TinyDiff**는 대표적인 비교 유틸리티인 *Beyond Compare*에서 영감을 받아 제작된 현대적이고 세련된 디자인의 데스크톱 파일 및 폴더 비교 도구입니다.
 
 Electron을 기반으로 한 안전한 OS 파일 시스템 접근성, React + Vite의 고속 프런트엔드 렌더링, 그리고 커스텀 Myers Diff 알고리즘을 결합하여 가볍고 강력한 디프(Diff) 환경을 제공합니다.
 

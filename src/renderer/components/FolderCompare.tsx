@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FolderOpen, ArrowRight, RefreshCw, AlertCircle, Copy, FileText, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface FolderCompareProps {
@@ -25,13 +25,63 @@ interface CompareRow {
 }
 
 export default function FolderCompare({ onOpenTextCompare, updateTitle, initialLeftPath, initialRightPath }: FolderCompareProps) {
-  const [leftPath, setLeftPath] = useState<string>(initialLeftPath || '');
-  const [rightPath, setRightPath] = useState<string>(initialRightPath || '');
+  const [leftPath, setLeftPath] = useState<string>(() => {
+    return initialLeftPath || localStorage.getItem('tinydiff_last_left_folder') || '';
+  });
+  const [rightPath, setRightPath] = useState<string>(() => {
+    return initialRightPath || localStorage.getItem('tinydiff_last_right_folder') || '';
+  });
   const [loading, setLoading] = useState<boolean>(false);
   const [rows, setRows] = useState<CompareRow[]>([]);
   const [filter, setFilter] = useState<'all' | 'diff' | 'leftOnly' | 'rightOnly'>('all');
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+  // Copying Progress & Toast State
+  const [syncingState, setSyncingState] = useState<{
+    relativePath: string;
+    name: string;
+    direction: 'left-to-right' | 'right-to-left';
+  } | null>(null);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+
+  // History states for auto-complete datalists
+  const [leftHistory, setLeftHistory] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('tinydiff_left_folder_history');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [rightHistory, setRightHistory] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('tinydiff_right_folder_history');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveFolderHistory = (side: 'left' | 'right', pathStr: string) => {
+    if (!pathStr) return;
+    const historyKey = side === 'left' ? 'tinydiff_left_folder_history' : 'tinydiff_right_folder_history';
+    const lastKey = side === 'left' ? 'tinydiff_last_left_folder' : 'tinydiff_last_right_folder';
+    
+    localStorage.setItem(lastKey, pathStr);
+
+    try {
+      const raw = localStorage.getItem(historyKey);
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      const updated = [pathStr, ...list.filter(p => p !== pathStr)].slice(0, 10);
+      localStorage.setItem(historyKey, JSON.stringify(updated));
+      if (side === 'left') setLeftHistory(updated);
+      else setRightHistory(updated);
+    } catch (e) {
+      // Ignore storage errors
+    }
+  };
 
   useEffect(() => {
     if (initialLeftPath && initialRightPath) {
@@ -105,18 +155,22 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   };
 
   const selectLeftFolder = async () => {
-    const path = await window.api.selectDirectory();
+    const startPath = leftPath || localStorage.getItem('tinydiff_last_left_folder') || undefined;
+    const path = await window.api.selectDirectory(startPath);
     if (path) {
       setLeftPath(path);
+      saveFolderHistory('left', path);
       const folderName = path.split(/[\\/]/).pop() || 'Folder';
       updateTitle(`FC: ${folderName}`);
     }
   };
 
   const selectRightFolder = async () => {
-    const path = await window.api.selectDirectory();
+    const startPath = rightPath || localStorage.getItem('tinydiff_last_right_folder') || undefined;
+    const path = await window.api.selectDirectory(startPath);
     if (path) {
       setRightPath(path);
+      saveFolderHistory('right', path);
       if (leftPath) {
         const folderNameLeft = leftPath.split(/[\\/]/).pop() || 'Folder';
         const folderNameRight = path.split(/[\\/]/).pop() || 'Folder';
@@ -125,15 +179,20 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     }
   };
 
-  const runCompare = async () => {
+  const runCompare = async (keepExpanded = false) => {
     if (!leftPath || !rightPath) {
       setError('Both left and right directory paths must be specified.');
       return;
     }
 
+    saveFolderHistory('left', leftPath);
+    saveFolderHistory('right', rightPath);
+
     setLoading(true);
     setError(null);
-    setExpandedPaths(new Set()); // Collapse all folders by default on fresh comparison
+    if (!keepExpanded) {
+      setExpandedPaths(new Set()); // Collapse all folders by default on fresh initial comparison
+    }
 
     try {
       const leftNodes = await window.api.scanDirectory(leftPath);
@@ -199,12 +258,9 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
         } else if (isDirectory) {
           status = 'identical'; // Directories themselves don't differ in content
         } else {
-          // If size or modification times are different
+          // Compare files by size (modified time is excluded from diff criteria per user request)
           const sizeDiff = leftSize !== rightSize;
-          // Beyond Compare style - difference if size differs, or modified time differs
-          // We can allow some tolerance in ms or just exact match
-          const timeDiff = Math.abs(leftMtime - rightMtime) > 1000;
-          if (sizeDiff || timeDiff) {
+          if (sizeDiff) {
             status = 'different';
           }
         }
@@ -237,37 +293,85 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   };
 
   const handleSyncFile = async (row: CompareRow, direction: 'left-to-right' | 'right-to-left') => {
+    if (syncingState) return; // Prevent duplicate concurrent sync operations
+
     try {
       if (row.isDirectory) {
         setError('Synchronizing full directories is not supported in this version. Please sync individual files.');
         return;
       }
 
-      if (direction === 'left-to-right') {
-        if (!row.leftExists) return;
-        const content = await window.api.readFile(row.leftFullPath);
-        await window.api.writeFile(row.rightFullPath, content);
-      } else {
-        if (!row.rightExists) return;
-        const content = await window.api.readFile(row.rightFullPath);
-        await window.api.writeFile(row.leftFullPath, content);
-      }
+      setSyncingState({
+        relativePath: row.relativePath,
+        name: row.name,
+        direction,
+      });
+      setError(null);
+      setSyncSuccessMsg(null);
 
-      // Re-run comparison to update statuses
-      await runCompare();
+      const src = direction === 'left-to-right' ? row.leftFullPath : row.rightFullPath;
+      const dest = direction === 'left-to-right' ? row.rightFullPath : row.leftFullPath;
+
+      if (direction === 'left-to-right' && !row.leftExists) return;
+      if (direction === 'right-to-left' && !row.rightExists) return;
+
+      // Fast OS native copy file
+      await window.api.copyFile(src, dest);
+
+      // Re-run comparison while preserving current open/expanded folder state
+      await runCompare(true);
+
+      const dirLabel = direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left';
+      setSyncSuccessMsg(`Copied "${row.name}" (${dirLabel}) successfully`);
+      setTimeout(() => setSyncSuccessMsg(null), 3000);
     } catch (err: any) {
       setError(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingState(null);
     }
   };
 
-  const filteredRows = rows.filter(row => {
-    if (!isRowVisible(row.relativePath)) return false;
-    if (filter === 'all') return true;
-    if (filter === 'diff') return row.status !== 'identical';
-    if (filter === 'leftOnly') return row.status === 'leftOnly';
-    if (filter === 'rightOnly') return row.status === 'rightOnly';
-    return true;
-  });
+  const filteredRows = useMemo(() => {
+    if (filter === 'all') {
+      return rows.filter(row => isRowVisible(row.relativePath));
+    }
+
+    // 1. Find all matching file relative paths
+    const matchingFilePaths = new Set<string>();
+    rows.forEach(row => {
+      if (!row.isDirectory) {
+        let isMatch = false;
+        if (filter === 'diff') isMatch = row.status !== 'identical';
+        else if (filter === 'leftOnly') isMatch = row.status === 'leftOnly';
+        else if (filter === 'rightOnly') isMatch = row.status === 'rightOnly';
+
+        if (isMatch) {
+          matchingFilePaths.add(row.relativePath);
+        }
+      }
+    });
+
+    // 2. Find all ancestor directory paths for matching files to preserve folder hierarchy
+    const neededDirPaths = new Set<string>();
+    matchingFilePaths.forEach(filePath => {
+      const parts = filePath.split('/');
+      let current = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        current = current ? `${current}/${parts[i]}` : parts[i];
+        neededDirPaths.add(current);
+      }
+    });
+
+    // 3. Keep matching files and their parent directory rows
+    return rows.filter(row => {
+      if (!isRowVisible(row.relativePath)) return false;
+
+      if (row.isDirectory) {
+        return neededDirPaths.has(row.relativePath);
+      }
+      return matchingFilePaths.has(row.relativePath);
+    });
+  }, [rows, filter, expandedPaths]);
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -303,9 +407,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               className="input-field"
               placeholder="Left Folder Path"
               value={leftPath}
+              list="left-folder-history-list"
               onChange={(e) => setLeftPath(e.target.value)}
               style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
+            <datalist id="left-folder-history-list">
+              {leftHistory.map((item, idx) => (
+                <option key={idx} value={item} />
+              ))}
+            </datalist>
             <button className="btn" onClick={selectLeftFolder} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
               <FolderOpen size={14} />
               Browse
@@ -321,9 +431,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               className="input-field"
               placeholder="Right Folder Path"
               value={rightPath}
+              list="right-folder-history-list"
               onChange={(e) => setRightPath(e.target.value)}
               style={{ flex: 1, height: '34px', padding: '6px 10px', fontSize: '0.8rem' }}
             />
+            <datalist id="right-folder-history-list">
+              {rightHistory.map((item, idx) => (
+                <option key={idx} value={item} />
+              ))}
+            </datalist>
             <button className="btn" onClick={selectRightFolder} style={{ height: '34px', padding: '0 12px', fontSize: '0.8rem' }}>
               <FolderOpen size={14} />
               Browse
@@ -380,8 +496,22 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
             </button>
           </div>
           
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Double click a file to open file comparison
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {syncingState && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>
+                <RefreshCw size={13} className="animate-spin" />
+                <span>Copying "{syncingState.name}" ({syncingState.direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left'})...</span>
+              </div>
+            )}
+            {syncSuccessMsg && !syncingState && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#34d399', fontWeight: 600 }}>
+                <Check size={13} />
+                <span>{syncSuccessMsg}</span>
+              </div>
+            )}
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Double click a file to open file comparison
+            </div>
           </div>
         </div>
       )}
@@ -537,46 +667,59 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                     </div>
 
                     {/* Actions Spacer/Buttons */}
-                    <div style={{ width: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+                    <div style={{ width: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
                       {!row.isDirectory && (
-                        <>
-                          <button
-                            onClick={() => handleSyncFile(row, 'left-to-right')}
-                            disabled={!row.leftExists}
-                            title="Copy left file to right"
-                            style={{
-                              padding: '2px 4px',
-                              borderRadius: '3px',
-                              background: 'rgba(255,255,255,0.05)',
-                              border: '1px solid var(--border-color)',
-                              cursor: row.leftExists ? 'pointer' : 'not-allowed',
-                              color: 'var(--text-primary)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              opacity: row.leftExists ? 1 : 0.2
-                            }}
-                          >
-                            <ArrowRight size={11} />
-                          </button>
-                          <button
-                            onClick={() => handleSyncFile(row, 'right-to-left')}
-                            disabled={!row.rightExists}
-                            title="Copy right file to left"
-                            style={{
-                              padding: '2px 4px',
-                              borderRadius: '3px',
-                              background: 'rgba(255,255,255,0.05)',
-                              border: '1px solid var(--border-color)',
-                              cursor: row.rightExists ? 'pointer' : 'not-allowed',
-                              color: 'var(--text-primary)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              opacity: row.rightExists ? 1 : 0.2
-                            }}
-                          >
-                            <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
-                          </button>
-                        </>
+                        syncingState?.relativePath === row.relativePath ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600 }}>
+                            <RefreshCw size={11} className="animate-spin" />
+                            <span>Copying...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSyncFile(row, 'left-to-right');
+                              }}
+                              disabled={!row.leftExists || !!syncingState}
+                              title="Copy left file to right"
+                              style={{
+                                padding: '2px 4px',
+                                borderRadius: '3px',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid var(--border-color)',
+                                cursor: row.leftExists && !syncingState ? 'pointer' : 'not-allowed',
+                                color: 'var(--text-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                opacity: row.leftExists && !syncingState ? 1 : 0.2
+                              }}
+                            >
+                              <ArrowRight size={11} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSyncFile(row, 'right-to-left');
+                              }}
+                              disabled={!row.rightExists || !!syncingState}
+                              title="Copy right file to left"
+                              style={{
+                                padding: '2px 4px',
+                                borderRadius: '3px',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid var(--border-color)',
+                                cursor: row.rightExists && !syncingState ? 'pointer' : 'not-allowed',
+                                color: 'var(--text-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                opacity: row.rightExists && !syncingState ? 1 : 0.2
+                              }}
+                            >
+                              <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
+                            </button>
+                          </>
+                        )
                       )}
                     </div>
 

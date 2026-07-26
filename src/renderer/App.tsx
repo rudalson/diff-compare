@@ -54,15 +54,31 @@ export default function App() {
       {/* Premium Header / Tab bar */}
       <header className="flex items-center select-none border-b" style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border-color)', height: '48px', display: 'flex', alignItems: 'center' }}>
         
-        {/* Logo */}
-        <div className="flex items-center gap-2 px-4 border-r font-display font-semibold text-indigo-400" style={{ borderColor: 'var(--border-color)', display: 'flex', alignItems: 'center', height: '100%', gap: '8px' }}>
+        {/* Logo / Home Tab */}
+        <div
+          onClick={() => setActiveTabId('home')}
+          className="flex items-center gap-2 px-4 border-r font-display font-semibold cursor-pointer transition-colors"
+          style={{
+            borderColor: 'var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            height: '100%',
+            gap: '8px',
+            paddingLeft: '16px',
+            paddingRight: '16px',
+            backgroundColor: activeTabId === 'home' ? 'var(--bg-active-tab)' : 'transparent',
+            borderBottom: activeTabId === 'home' ? '2px solid var(--accent-color)' : 'none',
+            color: activeTabId === 'home' ? 'var(--text-primary)' : 'var(--accent-color)',
+          }}
+          title="Home"
+        >
           <GitCompare size={18} className="text-indigo-400" />
-          <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>ANTIGRAVITY DIFF</span>
+          <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>TINYDIFF</span>
         </div>
 
-        {/* Tab Items */}
+        {/* Tab Items (Excluding home, which is accessible via TINYDIFF logo) */}
         <div className="flex-1 flex h-full overflow-x-auto overflow-y-hidden" style={{ display: 'flex', height: '100%', flex: 1 }}>
-          {tabs.map(tab => {
+          {tabs.filter(t => t.id !== 'home').map(tab => {
             const isActive = tab.id === activeTabId;
             return (
               <div
@@ -87,15 +103,13 @@ export default function App() {
                 
                 <span className="truncate max-w-[120px]">{tab.title}</span>
                 
-                {tab.id !== 'home' && (
-                  <button
-                    onClick={(e) => closeTab(tab.id, e)}
-                    className="ml-2 hover:bg-slate-700/60 p-0.5 rounded transition-all opacity-40 group-hover:opacity-100"
-                    style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', marginLeft: '8px', color: 'var(--text-primary)' }}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
+                <button
+                  onClick={(e) => closeTab(tab.id, e)}
+                  className="ml-2 hover:bg-slate-700/60 p-0.5 rounded transition-all opacity-40 group-hover:opacity-100"
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', marginLeft: '8px', color: 'var(--text-primary)' }}
+                >
+                  <X size={12} />
+                </button>
               </div>
             );
           })}
@@ -144,7 +158,7 @@ export default function App() {
                       <Sparkles size={40} />
                     </div>
                     <h1 className="font-display font-bold text-3xl mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-indigo-100 to-indigo-400" style={{ fontSize: '2rem', marginBottom: '8px', fontFamily: 'var(--font-display)', fontWeight: 800 }}>
-                      Antigravity Diff Compare
+                      TinyDiff
                     </h1>
                     <p className="text-slate-400 text-sm mb-8 max-w-md" style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '32px', lineHeight: 1.6 }}>
                       A premium, modern folder & file comparison utility. Scan directories, compare changes side-by-side, and sync differences easily.
