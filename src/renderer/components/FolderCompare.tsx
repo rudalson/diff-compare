@@ -476,16 +476,26 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   };
 
   const dirStatusMap = useMemo(() => {
-    const map = new Map<string, { leftHasNewer: boolean; rightHasNewer: boolean; hasDiff: boolean }>();
+    const map = new Map<string, {
+      leftHasNewer: boolean;
+      rightHasNewer: boolean;
+      leftHasOnly: boolean;
+      rightHasOnly: boolean;
+      hasDiff: boolean;
+    }>();
 
-    // Collect all files with differences (modified)
+    // Collect all files with differences (modified) and orphan items (left/right only)
     const modifiedFiles = rows.filter(r => !r.isDirectory && r.leftExists && r.rightExists && (r.leftMtime !== r.rightMtime || r.leftSize !== r.rightSize));
+    const leftOnlyItems = rows.filter(r => r.leftExists && !r.rightExists);
+    const rightOnlyItems = rows.filter(r => !r.leftExists && r.rightExists);
 
     rows.forEach(r => {
       if (r.isDirectory) {
         const prefix = r.relativePath + '/';
         let leftHasNewer = false;
         let rightHasNewer = false;
+        let leftHasOnly = r.leftExists && !r.rightExists;
+        let rightHasOnly = !r.leftExists && r.rightExists;
         let hasDiff = false;
 
         for (const mf of modifiedFiles) {
@@ -502,7 +512,14 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
           }
         }
 
-        map.set(r.relativePath, { leftHasNewer, rightHasNewer, hasDiff });
+        if (!leftHasOnly) {
+          leftHasOnly = leftOnlyItems.some(item => item.relativePath.startsWith(prefix));
+        }
+        if (!rightHasOnly) {
+          rightHasOnly = rightOnlyItems.some(item => item.relativePath.startsWith(prefix));
+        }
+
+        map.set(r.relativePath, { leftHasNewer, rightHasNewer, leftHasOnly, rightHasOnly, hasDiff });
       }
     });
 
@@ -790,7 +807,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
             {/* Headers */}
             <div style={{ display: 'flex', background: 'rgba(0,0,0,0.25)', borderBottom: '1px solid var(--border-color)', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.8rem', userSelect: 'none' }}>
               {/* Left Header */}
-              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 16px', position: 'relative' }}>
+              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 12px', position: 'relative' }}>
                 <div style={{ padding: '10px 8px 10px 0', position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
                   <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Left Folder Contents</span>
                   <div
@@ -815,12 +832,12 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               </div>
               
               {/* Actions Divider */}
-              <div style={{ width: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+              <div style={{ width: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
                 Sync
               </div>
 
               {/* Right Header */}
-              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 16px', position: 'relative' }}>
+              <div style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '0 12px', position: 'relative' }}>
                 <div style={{ padding: '10px 8px 10px 0', position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
                   <span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Right Folder Contents</span>
                   <div
@@ -875,11 +892,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                       const dirStatus = dirStatusMap.get(row.relativePath);
                       if (row.leftExists) {
                         if (dirStatus?.leftHasNewer) {
-                          // Requirement 3: Subdirectory with newer modified file on left -> Red folder icon & text
+                          // Subdirectory with newer modified file on left -> Red folder icon & text
                           leftTextColor = '#ef4444';
                           leftIconColor = '#ef4444';
+                        } else if (dirStatus?.leftHasOnly) {
+                          // Folder contains left-only items or exists only on left -> Blue folder icon & text
+                          leftTextColor = '#60a5fa';
+                          leftIconColor = '#60a5fa';
                         } else {
-                          // Requirement 2: Directory with existence difference only or no newer modified files -> Grey
+                          // Identical or no diffs -> Grey
                           leftTextColor = '#9ca3af';
                           leftIconColor = '#9ca3af';
                         }
@@ -887,11 +908,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
 
                       if (row.rightExists) {
                         if (dirStatus?.rightHasNewer) {
-                          // Requirement 3: Subdirectory with newer modified file on right -> Red folder icon & text
+                          // Subdirectory with newer modified file on right -> Red folder icon & text
                           rightTextColor = '#ef4444';
                           rightIconColor = '#ef4444';
+                        } else if (dirStatus?.rightHasOnly) {
+                          // Folder contains right-only items or exists only on right -> Blue folder icon & text
+                          rightTextColor = '#60a5fa';
+                          rightIconColor = '#60a5fa';
                         } else {
-                          // Requirement 2: Directory with existence difference only or no newer modified files -> Grey
+                          // Identical or no diffs -> Grey
                           rightTextColor = '#9ca3af';
                           rightIconColor = '#9ca3af';
                         }
@@ -921,11 +946,13 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                           rightIconColor = '#9ca3af';
                         }
                       } else if (row.leftExists && !row.rightExists) {
-                        leftTextColor = '#9ca3af';
-                        leftIconColor = '#9ca3af';
+                        // Left-only file -> Blue text & icon
+                        leftTextColor = '#60a5fa';
+                        leftIconColor = '#60a5fa';
                       } else if (!row.leftExists && row.rightExists) {
-                        rightTextColor = '#9ca3af';
-                        rightIconColor = '#9ca3af';
+                        // Right-only file -> Blue text & icon
+                        rightTextColor = '#60a5fa';
+                        rightIconColor = '#60a5fa';
                       }
                     }
 
@@ -1005,7 +1032,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                         </div>
 
                         {/* Actions Spacer/Buttons */}
-                        <div style={{ width: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+                        <div style={{ width: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
                           {!row.isDirectory && (
                             syncingState?.relativePath === row.relativePath ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600 }}>
