@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FolderOpen, ArrowRight, RefreshCw, AlertCircle, Copy, FileText, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown, Trash2, X } from 'lucide-react';
+import { FolderOpen, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Copy, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown, Trash2, X, Layers, Equal } from 'lucide-react';
 
 interface ContextMenuState {
   mouseX: number;
@@ -41,7 +41,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [rows, setRows] = useState<CompareRow[]>([]);
-  const [filter, setFilter] = useState<'all' | 'diff' | 'leftOnly' | 'rightOnly'>('all');
+  const [filter, setFilter] = useState<'all' | 'diff' | 'same' | 'leftOnly' | 'rightOnly'>('all');
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
@@ -401,9 +401,10 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
         } else if (isDirectory) {
           status = 'identical'; // Directories themselves don't differ in content
         } else {
-          // Compare files by size (modified time is excluded from diff criteria per user request)
+          // Compare files by size and modified timestamp
           const sizeDiff = leftSize !== rightSize;
-          if (sizeDiff) {
+          const timeDiff = leftMtime !== rightMtime;
+          if (sizeDiff || timeDiff) {
             status = 'different';
           }
         }
@@ -474,6 +475,40 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     }
   };
 
+  const dirStatusMap = useMemo(() => {
+    const map = new Map<string, { leftHasNewer: boolean; rightHasNewer: boolean; hasDiff: boolean }>();
+
+    // Collect all files with differences (modified)
+    const modifiedFiles = rows.filter(r => !r.isDirectory && r.leftExists && r.rightExists && (r.leftMtime !== r.rightMtime || r.leftSize !== r.rightSize));
+
+    rows.forEach(r => {
+      if (r.isDirectory) {
+        const prefix = r.relativePath + '/';
+        let leftHasNewer = false;
+        let rightHasNewer = false;
+        let hasDiff = false;
+
+        for (const mf of modifiedFiles) {
+          if (mf.relativePath.startsWith(prefix)) {
+            hasDiff = true;
+            if (mf.leftMtime > mf.rightMtime) {
+              leftHasNewer = true;
+            } else if (mf.rightMtime > mf.leftMtime) {
+              rightHasNewer = true;
+            } else if (mf.leftSize !== mf.rightSize) {
+              leftHasNewer = true;
+              rightHasNewer = true;
+            }
+          }
+        }
+
+        map.set(r.relativePath, { leftHasNewer, rightHasNewer, hasDiff });
+      }
+    });
+
+    return map;
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     if (filter === 'all') {
       return rows.filter(row => isRowVisible(row.relativePath));
@@ -485,6 +520,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       if (!row.isDirectory) {
         let isMatch = false;
         if (filter === 'diff') isMatch = row.status !== 'identical';
+        else if (filter === 'same') isMatch = row.status === 'identical';
         else if (filter === 'leftOnly') isMatch = row.status === 'leftOnly';
         else if (filter === 'rightOnly') isMatch = row.status === 'rightOnly';
 
@@ -630,29 +666,42 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               onClick={() => setFilter('all')}
               className={`btn ${filter === 'all' ? 'btn-primary' : ''}`}
               style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+              title="All Files"
             >
-              All Files ({rows.length})
+              <Layers size={14} />
+              All
             </button>
             <button
               onClick={() => setFilter('diff')}
               className={`btn ${filter === 'diff' ? 'btn-primary' : ''}`}
-              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'diff' ? 'white' : 'var(--diff-modified-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'diff' ? 'white' : '#ef4444' }}
+              title="Differences (다른 파일)"
             >
-              Differences ({rows.filter(r => r.status !== 'identical').length})
+              <GitCompare size={14} />
+            </button>
+            <button
+              onClick={() => setFilter('same')}
+              className={`btn ${filter === 'same' ? 'btn-primary' : ''}`}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'same' ? 'white' : 'var(--text-secondary)' }}
+              title="Identical (같은 파일)"
+            >
+              <Equal size={14} />
             </button>
             <button
               onClick={() => setFilter('leftOnly')}
               className={`btn ${filter === 'leftOnly' ? 'btn-primary' : ''}`}
-              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'leftOnly' ? 'white' : 'var(--diff-removed-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'leftOnly' ? 'white' : '#9ca3af' }}
+              title="Left Only (왼쪽만)"
             >
-              Left Only ({rows.filter(r => r.status === 'leftOnly').length})
+              <ArrowLeft size={14} />
             </button>
             <button
               onClick={() => setFilter('rightOnly')}
               className={`btn ${filter === 'rightOnly' ? 'btn-primary' : ''}`}
-              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'rightOnly' ? 'white' : 'var(--diff-added-text)' }}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', color: filter === 'rightOnly' ? 'white' : '#9ca3af' }}
+              title="Right Only (오른쪽만)"
             >
-              Right Only ({rows.filter(r => r.status === 'rightOnly').length})
+              <ArrowRight size={14} />
             </button>
           </div>
 
@@ -810,220 +859,266 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               ) : (
                 <>
                   {filteredRows.map((row, idx) => {
-                let leftBg = 'transparent';
-                let rightBg = 'transparent';
-                let leftColor = 'var(--text-primary)';
-                let rightColor = 'var(--text-primary)';
+                    const isSelected = selectedPaths.has(row.relativePath);
 
-                if (row.status === 'different') {
-                  leftBg = 'var(--diff-modified-bg)';
-                  rightBg = 'var(--diff-modified-bg)';
-                  leftColor = 'var(--diff-modified-text)';
-                  rightColor = 'var(--diff-modified-text)';
-                } else if (row.status === 'leftOnly') {
-                  leftBg = 'var(--diff-removed-bg)';
-                  leftColor = 'var(--diff-removed-text)';
-                } else if (row.status === 'rightOnly') {
-                  rightBg = 'var(--diff-added-bg)';
-                  rightColor = 'var(--diff-added-text)';
-                }
+                    // Requirement 1: "단순 왼쪽 오른쪽 편에만 있는 경우 배경색을 바꾸지는 말것."
+                    // Both left and right side row backgrounds remain transparent (unless selected).
+                    const leftBg = isSelected ? 'rgba(99, 102, 241, 0.22)' : 'transparent';
+                    const rightBg = isSelected ? 'rgba(99, 102, 241, 0.22)' : 'transparent';
 
-                const isSelected = selectedPaths.has(row.relativePath);
+                    let leftTextColor = 'var(--text-primary)';
+                    let leftIconColor = 'var(--text-secondary)';
+                    let rightTextColor = 'var(--text-primary)';
+                    let rightIconColor = 'var(--text-secondary)';
 
-                return (
-                  <div
-                    key={idx}
-                    onDoubleClick={() => {
-                      if (!row.isDirectory) {
-                        onOpenTextCompare(row.leftFullPath, row.rightFullPath);
+                    if (row.isDirectory) {
+                      const dirStatus = dirStatusMap.get(row.relativePath);
+                      if (row.leftExists) {
+                        if (dirStatus?.leftHasNewer) {
+                          // Requirement 3: Subdirectory with newer modified file on left -> Red folder icon & text
+                          leftTextColor = '#ef4444';
+                          leftIconColor = '#ef4444';
+                        } else {
+                          // Requirement 2: Directory with existence difference only or no newer modified files -> Grey
+                          leftTextColor = '#9ca3af';
+                          leftIconColor = '#9ca3af';
+                        }
                       }
-                    }}
-                    onClick={(e) => handleRowClick(e, row)}
-                    style={{
-                      display: 'flex',
-                      borderBottom: '1px solid var(--border-color)',
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      alignItems: 'stretch',
-                      boxShadow: isSelected ? 'inset 0 0 0 1px #6366f1' : 'none',
-                    }}
-                    className="hover:bg-white/5 transition-colors"
-                  >
-                    {/* Left Side */}
-                    <div
-                      onContextMenu={(e) => {
-                        if (row.leftExists) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!selectedPaths.has(row.relativePath)) {
-                            setSelectedPaths(new Set([row.relativePath]));
-                            setLastSelectedPath(row.relativePath);
-                          }
-                          setContextMenu({
-                            mouseX: e.clientX,
-                            mouseY: e.clientY,
-                            row,
-                            side: 'left',
-                            targetPath: row.leftFullPath,
-                          });
-                        }
-                      }}
-                      style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.22)' : leftBg, color: leftColor }}
-                    >
-                      {row.leftExists ? (
-                        <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
-                            {row.isDirectory ? (
-                              <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
-                                {expandedPaths.has(row.relativePath) ? (
-                                  <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} />
-                                ) : (
-                                  <ChevronRight size={12} style={{ color: 'var(--text-secondary)' }} />
-                                )}
-                              </span>
-                            ) : (
-                              <div style={{ width: '12px', flexShrink: 0 }} />
-                            )}
-                            {row.isDirectory ? (
-                              <Folder size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />
-                            ) : (
-                              <FileText size={14} style={{ flexShrink: 0 }} />
-                            )}
-                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
-                          </div>
-                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
-                            {!row.isDirectory ? formatSize(row.leftSize) : ''}
-                          </div>
-                          <div style={{ color: leftColor !== 'var(--text-primary)' ? leftColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                            {formatDate(row.leftMtime)}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div></div>
-                          <div></div>
-                          <div></div>
-                        </>
-                      )}
-                    </div>
 
-                    {/* Actions Spacer/Buttons */}
-                    <div style={{ width: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
-                      {!row.isDirectory && (
-                        syncingState?.relativePath === row.relativePath ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600 }}>
-                            <RefreshCw size={11} className="animate-spin" />
-                            <span>Copying...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSyncFile(row, 'left-to-right');
-                              }}
-                              disabled={!row.leftExists || !!syncingState}
-                              title="Copy left file to right"
-                              style={{
-                                padding: '2px 4px',
-                                borderRadius: '3px',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid var(--border-color)',
-                                cursor: row.leftExists && !syncingState ? 'pointer' : 'not-allowed',
-                                color: 'var(--text-primary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                opacity: row.leftExists && !syncingState ? 1 : 0.2
-                              }}
-                            >
-                              <ArrowRight size={11} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSyncFile(row, 'right-to-left');
-                              }}
-                              disabled={!row.rightExists || !!syncingState}
-                              title="Copy right file to left"
-                              style={{
-                                padding: '2px 4px',
-                                borderRadius: '3px',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid var(--border-color)',
-                                cursor: row.rightExists && !syncingState ? 'pointer' : 'not-allowed',
-                                color: 'var(--text-primary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                opacity: row.rightExists && !syncingState ? 1 : 0.2
-                              }}
-                            >
-                              <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
-                            </button>
-                          </>
-                        )
-                      )}
-                    </div>
-
-                    {/* Right Side */}
-                    <div
-                      onContextMenu={(e) => {
-                        if (row.rightExists) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!selectedPaths.has(row.relativePath)) {
-                            setSelectedPaths(new Set([row.relativePath]));
-                            setLastSelectedPath(row.relativePath);
-                          }
-                          setContextMenu({
-                            mouseX: e.clientX,
-                            mouseY: e.clientY,
-                            row,
-                            side: 'right',
-                            targetPath: row.rightFullPath,
-                          });
+                      if (row.rightExists) {
+                        if (dirStatus?.rightHasNewer) {
+                          // Requirement 3: Subdirectory with newer modified file on right -> Red folder icon & text
+                          rightTextColor = '#ef4444';
+                          rightIconColor = '#ef4444';
+                        } else {
+                          // Requirement 2: Directory with existence difference only or no newer modified files -> Grey
+                          rightTextColor = '#9ca3af';
+                          rightIconColor = '#9ca3af';
                         }
-                      }}
-                      style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.22)' : rightBg, color: rightColor }}
-                    >
-                      {row.rightExists ? (
-                        <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
-                            {row.isDirectory ? (
-                              <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
-                                {expandedPaths.has(row.relativePath) ? (
-                                  <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} />
+                      }
+                    } else {
+                      // File row
+                      if (row.leftExists && row.rightExists) {
+                        if (row.leftMtime > row.rightMtime) {
+                          leftTextColor = '#ef4444';
+                          leftIconColor = '#ef4444';
+                          rightTextColor = '#9ca3af';
+                          rightIconColor = '#9ca3af';
+                        } else if (row.rightMtime > row.leftMtime) {
+                          leftTextColor = '#9ca3af';
+                          leftIconColor = '#9ca3af';
+                          rightTextColor = '#ef4444';
+                          rightIconColor = '#ef4444';
+                        } else if (row.leftSize !== row.rightSize) {
+                          leftTextColor = '#ef4444';
+                          leftIconColor = '#ef4444';
+                          rightTextColor = '#ef4444';
+                          rightIconColor = '#ef4444';
+                        } else {
+                          leftTextColor = 'var(--text-primary)';
+                          leftIconColor = '#9ca3af';
+                          rightTextColor = 'var(--text-primary)';
+                          rightIconColor = '#9ca3af';
+                        }
+                      } else if (row.leftExists && !row.rightExists) {
+                        leftTextColor = '#9ca3af';
+                        leftIconColor = '#9ca3af';
+                      } else if (!row.leftExists && row.rightExists) {
+                        rightTextColor = '#9ca3af';
+                        rightIconColor = '#9ca3af';
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={idx}
+                        onDoubleClick={() => {
+                          if (!row.isDirectory) {
+                            onOpenTextCompare(row.leftFullPath, row.rightFullPath);
+                          }
+                        }}
+                        onClick={(e) => handleRowClick(e, row)}
+                        style={{
+                          display: 'flex',
+                          borderBottom: '1px solid var(--border-color)',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          alignItems: 'stretch',
+                          boxShadow: isSelected ? 'inset 0 0 0 1px #6366f1' : 'none',
+                        }}
+                        className="hover:bg-white/5 transition-colors"
+                      >
+                        {/* Left Side */}
+                        <div
+                          onContextMenu={(e) => {
+                            if (row.leftExists) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!selectedPaths.has(row.relativePath)) {
+                                setSelectedPaths(new Set([row.relativePath]));
+                                setLastSelectedPath(row.relativePath);
+                              }
+                              setContextMenu({
+                                mouseX: e.clientX,
+                                mouseY: e.clientY,
+                                row,
+                                side: 'left',
+                                targetPath: row.leftFullPath,
+                              });
+                            }
+                          }}
+                          style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: leftBg, color: leftTextColor }}
+                        >
+                          {row.leftExists ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
+                                {row.isDirectory ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
+                                    {expandedPaths.has(row.relativePath) ? (
+                                      <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} />
+                                    ) : (
+                                      <ChevronRight size={12} style={{ color: 'var(--text-secondary)' }} />
+                                    )}
+                                  </span>
                                 ) : (
-                                  <ChevronRight size={12} style={{ color: 'var(--text-secondary)' }} />
+                                  <div style={{ width: '12px', flexShrink: 0 }} />
                                 )}
-                              </span>
+                                {row.isDirectory && (
+                                  <Folder size={14} style={{ color: leftIconColor, flexShrink: 0 }} />
+                                )}
+                                <span className="truncate" style={{ color: leftTextColor, fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
+                              </div>
+                              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
+                                {!row.isDirectory ? formatSize(row.leftSize) : ''}
+                              </div>
+                              <div style={{ color: leftTextColor !== 'var(--text-primary)' ? leftTextColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                {formatDate(row.leftMtime)}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div></div>
+                              <div></div>
+                              <div></div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Actions Spacer/Buttons */}
+                        <div style={{ width: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+                          {!row.isDirectory && (
+                            syncingState?.relativePath === row.relativePath ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#60a5fa', fontSize: '0.7rem', fontWeight: 600 }}>
+                                <RefreshCw size={11} className="animate-spin" />
+                                <span>Copying...</span>
+                              </div>
                             ) : (
-                              <div style={{ width: '12px', flexShrink: 0 }} />
-                            )}
-                            {row.isDirectory ? (
-                              <Folder size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />
-                            ) : (
-                              <FileText size={14} style={{ flexShrink: 0 }} />
-                            )}
-                            <span className="truncate" style={{ fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
-                          </div>
-                          <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
-                            {!row.isDirectory ? formatSize(row.rightSize) : ''}
-                          </div>
-                          <div style={{ color: rightColor !== 'var(--text-primary)' ? rightColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                            {formatDate(row.rightMtime)}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div></div>
-                          <div></div>
-                          <div></div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSyncFile(row, 'left-to-right');
+                                  }}
+                                  disabled={!row.leftExists || !!syncingState}
+                                  title="Copy left file to right"
+                                  style={{
+                                    padding: '2px 4px',
+                                    borderRadius: '3px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border-color)',
+                                    cursor: row.leftExists && !syncingState ? 'pointer' : 'not-allowed',
+                                    color: 'var(--text-primary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    opacity: row.leftExists && !syncingState ? 1 : 0.2
+                                  }}
+                                >
+                                  <ArrowRight size={11} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSyncFile(row, 'right-to-left');
+                                  }}
+                                  disabled={!row.rightExists || !!syncingState}
+                                  title="Copy right file to left"
+                                  style={{
+                                    padding: '2px 4px',
+                                    borderRadius: '3px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border-color)',
+                                    cursor: row.rightExists && !syncingState ? 'pointer' : 'not-allowed',
+                                    color: 'var(--text-primary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    opacity: row.rightExists && !syncingState ? 1 : 0.2
+                                  }}
+                                >
+                                  <ArrowRight size={11} style={{ transform: 'rotate(180deg)' }} />
+                                </button>
+                              </>
+                            )
+                          )}
+                        </div>
+
+                        {/* Right Side */}
+                        <div
+                          onContextMenu={(e) => {
+                            if (row.rightExists) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!selectedPaths.has(row.relativePath)) {
+                                setSelectedPaths(new Set([row.relativePath]));
+                                setLastSelectedPath(row.relativePath);
+                              }
+                              setContextMenu({
+                                mouseX: e.clientX,
+                                mouseY: e.clientY,
+                                row,
+                                side: 'right',
+                                targetPath: row.rightFullPath,
+                              });
+                            }
+                          }}
+                          style={{ flex: '1', display: 'grid', gridTemplateColumns: gridLayout, padding: '3px 12px', alignItems: 'center', backgroundColor: rightBg, color: rightTextColor }}
+                        >
+                          {row.rightExists ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: `${row.depth * 16}px`, minWidth: 0, overflow: 'hidden' }}>
+                                {row.isDirectory ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', width: '12px', flexShrink: 0 }}>
+                                    {expandedPaths.has(row.relativePath) ? (
+                                      <ChevronDown size={12} style={{ color: 'var(--text-secondary)' }} />
+                                    ) : (
+                                      <ChevronRight size={12} style={{ color: 'var(--text-secondary)' }} />
+                                    )}
+                                  </span>
+                                ) : (
+                                  <div style={{ width: '12px', flexShrink: 0 }} />
+                                )}
+                                {row.isDirectory && (
+                                  <Folder size={14} style={{ color: rightIconColor, flexShrink: 0 }} />
+                                )}
+                                <span className="truncate" style={{ color: rightTextColor, fontWeight: row.isDirectory ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
+                              </div>
+                              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingRight: '8px' }}>
+                                {!row.isDirectory ? formatSize(row.rightSize) : ''}
+                              </div>
+                              <div style={{ color: rightTextColor !== 'var(--text-primary)' ? rightTextColor : 'var(--text-secondary)', fontSize: '0.75rem', paddingLeft: '16px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                {formatDate(row.rightMtime)}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div></div>
+                              <div></div>
+                              <div></div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
             </>
           )}
         </div>
