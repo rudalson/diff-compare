@@ -141,6 +141,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       }
 
       await runCompare(true);
+      setSelectedPaths(new Set());
+      setLastSelectedPath(null);
       const dirLabel = direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left';
       setSyncSuccessMsg(`Copied ${copiedCount} files (${dirLabel}) successfully.`);
       setTimeout(() => setSyncSuccessMsg(null), 3500);
@@ -180,6 +182,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       setSyncSuccessMsg(`"${deleteConfirmTarget.name}" deleted successfully.`);
       setTimeout(() => setSyncSuccessMsg(null), 3000);
       setDeleteConfirmTarget(null);
+      setSelectedPaths(new Set());
+      setLastSelectedPath(null);
       await runCompare(true);
     } catch (err: any) {
       setError(`Delete failed: ${err.message}`);
@@ -403,7 +407,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
         } else {
           // Compare files by size and modified timestamp
           const sizeDiff = leftSize !== rightSize;
-          const timeDiff = leftMtime !== rightMtime;
+          // Beyond Compare standard: 2-second (2000ms) tolerance for file modification timestamps
+          const timeDiff = Math.abs(leftMtime - rightMtime) > 2000;
           if (sizeDiff || timeDiff) {
             status = 'different';
           }
@@ -464,6 +469,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
 
       // Re-run comparison while preserving current open/expanded folder state
       await runCompare(true);
+      setSelectedPaths(new Set());
+      setLastSelectedPath(null);
 
       const dirLabel = direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left';
       setSyncSuccessMsg(`Copied "${row.name}" (${dirLabel}) successfully`);
@@ -485,7 +492,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     }>();
 
     // Collect all files with differences (modified) and orphan items (left/right only)
-    const modifiedFiles = rows.filter(r => !r.isDirectory && r.leftExists && r.rightExists && (r.leftMtime !== r.rightMtime || r.leftSize !== r.rightSize));
+    const modifiedFiles = rows.filter(r => !r.isDirectory && r.status === 'different');
     const leftOnlyItems = rows.filter(r => r.leftExists && !r.rightExists);
     const rightOnlyItems = rows.filter(r => !r.leftExists && r.rightExists);
 
@@ -501,9 +508,9 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
         for (const mf of modifiedFiles) {
           if (mf.relativePath.startsWith(prefix)) {
             hasDiff = true;
-            if (mf.leftMtime > mf.rightMtime) {
+            if (mf.leftMtime - mf.rightMtime > 2000) {
               leftHasNewer = true;
-            } else if (mf.rightMtime > mf.leftMtime) {
+            } else if (mf.rightMtime - mf.leftMtime > 2000) {
               rightHasNewer = true;
             } else if (mf.leftSize !== mf.rightSize) {
               leftHasNewer = true;
@@ -924,17 +931,22 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                     } else {
                       // File row
                       if (row.leftExists && row.rightExists) {
-                        if (row.leftMtime > row.rightMtime) {
-                          leftTextColor = '#ef4444';
-                          leftIconColor = '#ef4444';
-                          rightTextColor = '#9ca3af';
-                          rightIconColor = '#9ca3af';
-                        } else if (row.rightMtime > row.leftMtime) {
-                          leftTextColor = '#9ca3af';
-                          leftIconColor = '#9ca3af';
-                          rightTextColor = '#ef4444';
-                          rightIconColor = '#ef4444';
-                        } else if (row.leftSize !== row.rightSize) {
+                        const isTimeDiff = Math.abs(row.leftMtime - row.rightMtime) > 2000;
+                        const isSizeDiff = row.leftSize !== row.rightSize;
+
+                        if (isTimeDiff) {
+                          if (row.leftMtime > row.rightMtime) {
+                            leftTextColor = '#ef4444';
+                            leftIconColor = '#ef4444';
+                            rightTextColor = '#9ca3af';
+                            rightIconColor = '#9ca3af';
+                          } else {
+                            leftTextColor = '#9ca3af';
+                            leftIconColor = '#9ca3af';
+                            rightTextColor = '#ef4444';
+                            rightIconColor = '#ef4444';
+                          }
+                        } else if (isSizeDiff) {
                           leftTextColor = '#ef4444';
                           leftIconColor = '#ef4444';
                           rightTextColor = '#ef4444';
