@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { FileText, FolderOpen, Save, RefreshCw, AlertCircle, ArrowLeftRight, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
+import { FileText, FolderOpen, Save, RefreshCw, AlertCircle, ArrowLeftRight, Check, ChevronLeft, ChevronRight, Layers, GitCompare, Filter } from 'lucide-react';
 
 interface TextCompareProps {
   initialLeftPath?: string;
@@ -25,6 +25,7 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [diffRows, setDiffRows] = useState<DiffRow[]>([]);
+  const [viewMode, setViewMode] = useState<'all' | 'diffOnly'>('all');
   const [stats, setStats] = useState<{added: number, removed: number, modified: number, unchanged: number}>({added: 0, removed: 0, modified: 0, unchanged: 0});
   const [leftSaveSuccess, setLeftSaveSuccess] = useState<boolean>(false);
   const [rightSaveSuccess, setRightSaveSuccess] = useState<boolean>(false);
@@ -34,6 +35,12 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   const leftLineNumbersRef = useRef<HTMLDivElement>(null);
   const rightLineNumbersRef = useRef<HTMLDivElement>(null);
   const activeScroll = useRef<'left' | 'right' | null>(null);
+
+  const rowsToDisplay = useMemo(() => {
+    return diffRows
+      .map((row, originalIndex) => ({ ...row, originalIndex }))
+      .filter(row => viewMode === 'all' || row.type !== 'unchanged');
+  }, [diffRows, viewMode]);
 
   const saveFileHistory = (side: 'left' | 'right', pathStr: string) => {
     if (!pathStr) return;
@@ -279,6 +286,28 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             <span>Refresh</span>
           </button>
+
+          {/* View Mode Toggle Buttons */}
+          <div style={{ display: 'flex', gap: '2px', background: 'rgba(0, 0, 0, 0.3)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)', height: '34px', alignItems: 'center' }}>
+            <button
+              className={`btn ${viewMode === 'all' ? 'btn-primary' : ''}`}
+              onClick={() => setViewMode('all')}
+              style={{ height: '28px', padding: '0 10px', fontSize: '0.75rem', border: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+              title="Show All Lines (전체 보기)"
+            >
+              <Layers size={13} />
+              <span>All</span>
+            </button>
+            <button
+              className={`btn ${viewMode === 'diffOnly' ? 'btn-primary' : ''}`}
+              onClick={() => setViewMode('diffOnly')}
+              style={{ height: '28px', padding: '0 10px', fontSize: '0.75rem', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', color: viewMode === 'diffOnly' ? 'white' : 'var(--diff-modified-text)' }}
+              title="Show Differences Only (차이점만 타이트하게 보기)"
+            >
+              <GitCompare size={13} />
+              <span>Diff Only</span>
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -308,20 +337,67 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
             {leftSaveSuccess ? 'Left Saved!' : 'Save Left File'}
           </button>
 
-          {/* Center Stats */}
-          <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Unchanged: <strong style={{ color: 'var(--text-primary)' }}>{stats.unchanged}</strong>
-            </span>
-            <span style={{ color: 'var(--diff-removed-text)' }}>
-              Removed: <strong>{stats.removed}</strong>
-            </span>
-            <span style={{ color: 'var(--diff-modified-text)' }}>
-              Modified: <strong>{stats.modified}</strong>
-            </span>
-            <span style={{ color: 'var(--diff-added-text)' }}>
-              Added: <strong>{stats.added}</strong>
-            </span>
+          {/* Center: View Mode Toggle & Stats */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div style={{ display: 'flex', gap: '2px', background: 'rgba(0, 0, 0, 0.25)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <button
+                onClick={() => setViewMode('all')}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: '0.75rem',
+                  height: '24px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: viewMode === 'all' ? 'var(--accent-color)' : 'transparent',
+                  color: viewMode === 'all' ? 'white' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                title="Show all lines (전체 라인)"
+              >
+                <Layers size={12} />
+                <span>All ({diffRows.length})</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('diffOnly')}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: '0.75rem',
+                  height: '24px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: viewMode === 'diffOnly' ? 'var(--accent-color)' : 'transparent',
+                  color: viewMode === 'diffOnly' ? 'white' : 'var(--diff-modified-text)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontWeight: viewMode === 'diffOnly' ? 600 : 400,
+                }}
+                title="Show differences only (차이점만 타이트하게 보기)"
+              >
+                <GitCompare size={12} />
+                <span>Diff Only ({stats.modified + stats.added + stats.removed})</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '14px', fontSize: '0.75rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Unchanged: <strong style={{ color: 'var(--text-primary)' }}>{stats.unchanged}</strong>
+              </span>
+              <span style={{ color: 'var(--diff-removed-text)' }}>
+                Removed: <strong>{stats.removed}</strong>
+              </span>
+              <span style={{ color: 'var(--diff-modified-text)' }}>
+                Modified: <strong>{stats.modified}</strong>
+              </span>
+              <span style={{ color: 'var(--diff-added-text)' }}>
+                Added: <strong>{stats.added}</strong>
+              </span>
+            </div>
           </div>
 
           {/* Right save button */}
@@ -372,11 +448,34 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   lineHeight: '22px',
                 }}
               >
-                {diffRows.map((row, idx) => (
-                  <div key={idx} style={{ height: '22px' }}>
-                    {row.type !== 'added' ? row.leftLineNumber : ''}
-                  </div>
-                ))}
+                {rowsToDisplay.map((row, displayIdx) => {
+                  const prevRow = displayIdx > 0 ? rowsToDisplay[displayIdx - 1] : null;
+                  const skippedCount = prevRow ? row.originalIndex - prevRow.originalIndex - 1 : 0;
+                  const showDivider = viewMode === 'diffOnly' && skippedCount > 0;
+
+                  let numColor = 'var(--text-muted)';
+                  let numBg = 'transparent';
+                  if (row.type === 'removed') {
+                    numColor = 'var(--diff-removed-text)';
+                    numBg = 'rgba(239, 68, 68, 0.15)';
+                  } else if (row.type === 'modified') {
+                    numColor = 'var(--diff-modified-text)';
+                    numBg = 'rgba(59, 130, 246, 0.15)';
+                  }
+
+                  return (
+                    <Fragment key={row.originalIndex}>
+                      {showDivider && (
+                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                          ···
+                        </div>
+                      )}
+                      <div style={{ height: '22px', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400 }}>
+                        {row.type !== 'added' ? row.leftLineNumber : ''}
+                      </div>
+                    </Fragment>
+                  );
+                })}
               </div>
 
               {/* Left Content */}
@@ -394,43 +493,65 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   whiteSpace: 'pre',
                 }}
               >
-                {diffRows.map((row, idx) => {
+                {rowsToDisplay.map((row, displayIdx) => {
+                  const prevRow = displayIdx > 0 ? rowsToDisplay[displayIdx - 1] : null;
+                  const skippedCount = prevRow ? row.originalIndex - prevRow.originalIndex - 1 : 0;
+                  const showDivider = viewMode === 'diffOnly' && skippedCount > 0;
+
                   let bg = 'transparent';
-                  if (row.type === 'removed') bg = 'var(--diff-removed-bg)';
-                  else if (row.type === 'modified') bg = 'var(--diff-modified-bg)';
+                  let textColor = 'var(--text-primary)';
+                  let borderLeft = '3px solid transparent';
+
+                  if (row.type === 'removed') {
+                    bg = 'var(--diff-removed-bg)';
+                    textColor = 'var(--diff-removed-text)';
+                    borderLeft = '3px solid var(--diff-removed-border)';
+                  } else if (row.type === 'modified') {
+                    bg = 'var(--diff-modified-bg)';
+                    textColor = 'var(--diff-modified-text)';
+                    borderLeft = '3px solid var(--diff-modified-border)';
+                  }
                   
                   return (
-                    <div
-                      key={idx}
-                      style={{
-                        backgroundColor: bg,
-                        minHeight: '22px',
-                        paddingLeft: '12px',
-                        paddingRight: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                    >
-                      {row.type !== 'added' ? (
-                        <input
-                          type="text"
-                          value={row.leftContent}
-                          onChange={(e) => handleEditLine(idx, 'left', e.target.value)}
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'inherit',
-                            fontFamily: 'inherit',
-                            fontSize: 'inherit',
-                            width: '100%',
-                            outline: 'none',
-                            padding: 0,
-                          }}
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', opacity: 0.2 }}>~</span>
+                    <Fragment key={row.originalIndex}>
+                      {showDivider && (
+                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
+                          ··· {skippedCount} unchanged {skippedCount === 1 ? 'line' : 'lines'} omitted ···
+                        </div>
                       )}
-                    </div>
+                      <div
+                        style={{
+                          backgroundColor: bg,
+                          borderLeft: borderLeft,
+                          minHeight: '22px',
+                          paddingLeft: '9px',
+                          paddingRight: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {row.type !== 'added' ? (
+                          <input
+                            type="text"
+                            value={row.leftContent}
+                            onChange={(e) => handleEditLine(row.originalIndex, 'left', e.target.value)}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: textColor,
+                              fontFamily: 'inherit',
+                              fontSize: 'inherit',
+                              width: '100%',
+                              outline: 'none',
+                              padding: 0,
+                              fontWeight: row.type !== 'unchanged' ? 500 : 400,
+                            }}
+                          />
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', opacity: 0.2 }}>~</span>
+                        )}
+                      </div>
+                    </Fragment>
                   );
                 })}
               </div>
@@ -450,57 +571,69 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                 lineHeight: '22px',
               }}
             >
-              {diffRows.map((row, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    height: '22px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '2px',
-                  }}
-                >
-                  {row.type !== 'unchanged' && (
-                    <div style={{ display: 'flex' }}>
-                      {/* Copy Right to Left */}
-                      {row.type !== 'removed' && (
-                        <button
-                          onClick={() => handleMergeLine(idx, 'right-to-left')}
-                          title="Copy line to Left"
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            color: 'var(--diff-modified-text)',
-                            padding: 0,
-                            display: 'flex',
-                          }}
-                        >
-                          <ChevronLeft size={12} />
-                        </button>
-                      )}
-                      {/* Copy Left to Right */}
-                      {row.type !== 'added' && (
-                        <button
-                          onClick={() => handleMergeLine(idx, 'left-to-right')}
-                          title="Copy line to Right"
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            color: 'var(--diff-modified-text)',
-                            padding: 0,
-                            display: 'flex',
-                          }}
-                        >
-                          <ChevronRight size={12} />
-                        </button>
+              {rowsToDisplay.map((row, displayIdx) => {
+                const prevRow = displayIdx > 0 ? rowsToDisplay[displayIdx - 1] : null;
+                const skippedCount = prevRow ? row.originalIndex - prevRow.originalIndex - 1 : 0;
+                const showDivider = viewMode === 'diffOnly' && skippedCount > 0;
+
+                return (
+                  <Fragment key={row.originalIndex}>
+                    {showDivider && (
+                      <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                        ···
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        height: '22px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '2px',
+                      }}
+                    >
+                      {row.type !== 'unchanged' && (
+                        <div style={{ display: 'flex' }}>
+                          {/* Copy Right to Left */}
+                          {row.type !== 'removed' && (
+                            <button
+                              onClick={() => handleMergeLine(row.originalIndex, 'right-to-left')}
+                              title="Copy line to Left"
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--diff-modified-text)',
+                                padding: 0,
+                                display: 'flex',
+                              }}
+                            >
+                              <ChevronLeft size={12} />
+                            </button>
+                          )}
+                          {/* Copy Left to Right */}
+                          {row.type !== 'added' && (
+                            <button
+                              onClick={() => handleMergeLine(row.originalIndex, 'left-to-right')}
+                              title="Copy line to Right"
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                color: 'var(--diff-modified-text)',
+                                padding: 0,
+                                display: 'flex',
+                              }}
+                            >
+                              <ChevronRight size={12} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  </Fragment>
+                );
+              })}
             </div>
 
             {/* RIGHT EDITOR PANE */}
@@ -524,11 +657,34 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   lineHeight: '22px',
                 }}
               >
-                {diffRows.map((row, idx) => (
-                  <div key={idx} style={{ height: '22px' }}>
-                    {row.type !== 'removed' ? row.rightLineNumber : ''}
-                  </div>
-                ))}
+                {rowsToDisplay.map((row, displayIdx) => {
+                  const prevRow = displayIdx > 0 ? rowsToDisplay[displayIdx - 1] : null;
+                  const skippedCount = prevRow ? row.originalIndex - prevRow.originalIndex - 1 : 0;
+                  const showDivider = viewMode === 'diffOnly' && skippedCount > 0;
+
+                  let numColor = 'var(--text-muted)';
+                  let numBg = 'transparent';
+                  if (row.type === 'added') {
+                    numColor = 'var(--diff-added-text)';
+                    numBg = 'rgba(16, 185, 129, 0.15)';
+                  } else if (row.type === 'modified') {
+                    numColor = 'var(--diff-modified-text)';
+                    numBg = 'rgba(59, 130, 246, 0.15)';
+                  }
+
+                  return (
+                    <Fragment key={row.originalIndex}>
+                      {showDivider && (
+                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                          ···
+                        </div>
+                      )}
+                      <div style={{ height: '22px', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400 }}>
+                        {row.type !== 'removed' ? row.rightLineNumber : ''}
+                      </div>
+                    </Fragment>
+                  );
+                })}
               </div>
 
               {/* Right Content */}
@@ -546,43 +702,65 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   whiteSpace: 'pre',
                 }}
               >
-                {diffRows.map((row, idx) => {
+                {rowsToDisplay.map((row, displayIdx) => {
+                  const prevRow = displayIdx > 0 ? rowsToDisplay[displayIdx - 1] : null;
+                  const skippedCount = prevRow ? row.originalIndex - prevRow.originalIndex - 1 : 0;
+                  const showDivider = viewMode === 'diffOnly' && skippedCount > 0;
+
                   let bg = 'transparent';
-                  if (row.type === 'added') bg = 'var(--diff-added-bg)';
-                  else if (row.type === 'modified') bg = 'var(--diff-modified-bg)';
+                  let textColor = 'var(--text-primary)';
+                  let borderLeft = '3px solid transparent';
+
+                  if (row.type === 'added') {
+                    bg = 'var(--diff-added-bg)';
+                    textColor = 'var(--diff-added-text)';
+                    borderLeft = '3px solid var(--diff-added-border)';
+                  } else if (row.type === 'modified') {
+                    bg = 'var(--diff-modified-bg)';
+                    textColor = 'var(--diff-modified-text)';
+                    borderLeft = '3px solid var(--diff-modified-border)';
+                  }
                   
                   return (
-                    <div
-                      key={idx}
-                      style={{
-                        backgroundColor: bg,
-                        minHeight: '22px',
-                        paddingLeft: '12px',
-                        paddingRight: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                    >
-                      {row.type !== 'removed' ? (
-                        <input
-                          type="text"
-                          value={row.rightContent}
-                          onChange={(e) => handleEditLine(idx, 'right', e.target.value)}
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'inherit',
-                            fontFamily: 'inherit',
-                            fontSize: 'inherit',
-                            width: '100%',
-                            outline: 'none',
-                            padding: 0,
-                          }}
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', opacity: 0.2 }}>~</span>
+                    <Fragment key={row.originalIndex}>
+                      {showDivider && (
+                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
+                          ··· {skippedCount} unchanged {skippedCount === 1 ? 'line' : 'lines'} omitted ···
+                        </div>
                       )}
-                    </div>
+                      <div
+                        style={{
+                          backgroundColor: bg,
+                          borderLeft: borderLeft,
+                          minHeight: '22px',
+                          paddingLeft: '9px',
+                          paddingRight: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {row.type !== 'removed' ? (
+                          <input
+                            type="text"
+                            value={row.rightContent}
+                            onChange={(e) => handleEditLine(row.originalIndex, 'right', e.target.value)}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: textColor,
+                              fontFamily: 'inherit',
+                              fontSize: 'inherit',
+                              width: '100%',
+                              outline: 'none',
+                              padding: 0,
+                              fontWeight: row.type !== 'unchanged' ? 500 : 400,
+                            }}
+                          />
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', opacity: 0.2 }}>~</span>
+                        )}
+                      </div>
+                    </Fragment>
                   );
                 })}
               </div>

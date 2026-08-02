@@ -23,19 +23,20 @@
   --accent-color: #6366f1; /* Indigo */
   --accent-color-hover: #4f46e5;
   
-  /* Diff Highlighting */
+  /* Diff Highlighting - High Contrast & Clear Visual Distinction */
   --diff-unchanged-bg: transparent;
-  --diff-added-bg: rgba(16, 185, 129, 0.12);
-  --diff-added-text: #34d399;
-  --diff-added-border: rgba(16, 185, 129, 0.3);
-  
-  --diff-removed-bg: rgba(239, 68, 68, 0.12);
+
+  --diff-added-bg: rgba(16, 185, 129, 0.22);
+  --diff-added-text: #4ade80;
+  --diff-added-border: #22c55e;
+
+  --diff-removed-bg: rgba(239, 68, 68, 0.22);
   --diff-removed-text: #f87171;
-  --diff-removed-border: rgba(239, 68, 68, 0.3);
-  
-  --diff-modified-bg: rgba(59, 130, 246, 0.12);
-  --diff-modified-text: #60a5fa;
-  --diff-modified-border: rgba(59, 130, 246, 0.3);
+  --diff-removed-border: #ef4444;
+
+  --diff-modified-bg: rgba(59, 130, 246, 0.28);
+  --diff-modified-text: #93c5fd;
+  --diff-modified-border: #3b82f6;
   
   /* Glassmorphism helpers */
   --glass-bg: rgba(22, 28, 36, 0.5);
