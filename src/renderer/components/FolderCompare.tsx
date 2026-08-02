@@ -730,7 +730,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
           </div>
 
           {/* Bulk Action Bar */}
-          {selectedPaths.size > 0 && (
+          {selectedPaths.size > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.35)', borderRadius: '6px', padding: '3px 10px' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#a5b4fc' }}>
                 {selectedPaths.size} selected
