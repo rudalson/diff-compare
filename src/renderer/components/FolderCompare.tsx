@@ -581,7 +581,10 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+        runCompare(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         const allPaths = new Set(filteredRows.map(r => r.relativePath));
         setSelectedPaths(allPaths);
@@ -591,7 +594,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filteredRows]);
+  }, [filteredRows, leftPath, rightPath, expandedPaths]);
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -667,9 +670,21 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
           </div>
 
           {/* Compare Button */}
-          <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '34px', paddingLeft: '16px', paddingRight: '16px', fontSize: '0.8rem' }}>
+          <button className="btn btn-primary" onClick={() => runCompare(false)} disabled={loading} style={{ height: '34px', paddingLeft: '16px', paddingRight: '16px', fontSize: '0.8rem' }}>
             {loading ? <RefreshCw size={14} className="animate-spin" /> : <GitCompare size={14} />}
             Compare
+          </button>
+
+          {/* Refresh Button */}
+          <button
+            className="btn"
+            onClick={() => runCompare(true)}
+            disabled={loading || !leftPath || !rightPath}
+            style={{ height: '34px', padding: '0 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Refresh comparison (F5 / Ctrl+R)"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
           </button>
         </div>
 
@@ -685,7 +700,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       {rows.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           {/* Filter Buttons */}
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button
               onClick={() => setFilter('all')}
               className={`btn ${filter === 'all' ? 'btn-primary' : ''}`}
@@ -726,6 +741,17 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               title="Right Only (오른쪽만)"
             >
               <ArrowRight size={14} />
+            </button>
+            <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
+            <button
+              onClick={() => runCompare(true)}
+              className="btn"
+              disabled={loading}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}
+              title="Refresh directory comparison (F5 / Ctrl+R)"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
             </button>
           </div>
 
@@ -1207,6 +1233,17 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
               <span>Open File Compare</span>
             </button>
           )}
+
+          <button
+            className="btn-menu-item"
+            onClick={() => {
+              runCompare(true);
+              setContextMenu(null);
+            }}
+          >
+            <RefreshCw size={14} />
+            <span>Refresh (F5)</span>
+          </button>
 
           <button
             className="btn-menu-item"

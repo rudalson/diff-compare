@@ -47,6 +47,20 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
     }
   }, [initialLeftPath, initialRightPath]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
+        e.preventDefault();
+        runCompare();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [leftPath, rightPath]);
+
   const selectLeftFile = async () => {
     const startPath = leftPath || localStorage.getItem('tinydiff_last_left_file') || undefined;
     const path = await window.api.selectFile(startPath);
@@ -252,6 +266,18 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
           <button className="btn btn-primary" onClick={runCompare} disabled={loading} style={{ height: '34px', paddingLeft: '16px', paddingRight: '16px', fontSize: '0.8rem' }}>
             {loading ? <RefreshCw size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
             Compare
+          </button>
+
+          {/* Refresh Button */}
+          <button
+            className="btn"
+            onClick={runCompare}
+            disabled={loading || !leftPath || !rightPath}
+            style={{ height: '34px', padding: '0 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Refresh File Compare (F5 / Ctrl+R)"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
           </button>
         </div>
 
