@@ -1,7 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
 import { runFileCompare } from './diffEngine';
 
 let mainWindow: BrowserWindow | null = null;
@@ -153,22 +152,8 @@ const KNOWN_HIDDEN_NAMES = new Set([
   'ntuser.dat.log1',
   'ntuser.dat.log2',
   'ntuser.ini',
+  'autorun.inf',
 ]);
-
-function getWinHiddenNames(dirPath: string): Set<string> {
-  if (process.platform !== 'win32') return new Set();
-  try {
-    const stdout = execSync(`cmd.exe /c "dir /a:h /b "${dirPath}" 2>nul"`, {
-      encoding: 'utf-8',
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const lines = stdout.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean);
-    return new Set(lines);
-  } catch {
-    return new Set();
-  }
-}
 
 // Scan Directory recursively
 ipcMain.handle('scan-directory', async (_, dirPath: string) => {
@@ -177,7 +162,6 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
 
     const walk = (currentDir: string, parentIsHidden = false) => {
       try {
-        const winHiddenSet = getWinHiddenNames(currentDir);
         const files = fs.readdirSync(currentDir);
         for (const file of files) {
           try {
@@ -187,8 +171,7 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
             
             const isDotFile = file.startsWith('.');
             const isKnownHidden = KNOWN_HIDDEN_NAMES.has(file.toLowerCase());
-            const isWinHidden = winHiddenSet.has(file.toLowerCase());
-            const isHidden = parentIsHidden || isDotFile || isKnownHidden || isWinHidden;
+            const isHidden = parentIsHidden || isDotFile || isKnownHidden;
 
             if (stat.isDirectory()) {
               results.push({
