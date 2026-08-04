@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FolderOpen, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Copy, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown, Trash2, X, Layers, Equal } from 'lucide-react';
+import { FolderOpen, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Copy, Folder, Check, FileCode, GitCompare, ChevronRight, ChevronDown, Trash2, X, Layers, Equal, Eye, EyeOff } from 'lucide-react';
 
 interface ContextMenuState {
   mouseX: number;
@@ -30,6 +30,7 @@ interface CompareRow {
   rightFullPath: string;
   status: 'identical' | 'different' | 'leftOnly' | 'rightOnly';
   depth: number;
+  isHidden: boolean;
 }
 
 export default function FolderCompare({ onOpenTextCompare, updateTitle, initialLeftPath, initialRightPath }: FolderCompareProps) {
@@ -42,6 +43,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   const [loading, setLoading] = useState<boolean>(false);
   const [rows, setRows] = useState<CompareRow[]>([]);
   const [filter, setFilter] = useState<'all' | 'diff' | 'same' | 'leftOnly' | 'rightOnly'>('all');
+  const [showHidden, setShowHidden] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
@@ -415,6 +417,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
         }
 
         const name = relPath.split('/').pop() || '';
+        const isHidden = (leftNode?.isHidden ?? false) || (rightNode?.isHidden ?? false);
 
         return {
           name,
@@ -430,6 +433,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
           rightFullPath,
           status,
           depth,
+          isHidden,
         };
       });
 
@@ -534,13 +538,15 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   }, [rows]);
 
   const filteredRows = useMemo(() => {
+    const baseRows = showHidden ? rows : rows.filter(row => !row.isHidden);
+
     if (filter === 'all') {
-      return rows.filter(row => isRowVisible(row.relativePath));
+      return baseRows.filter(row => isRowVisible(row.relativePath));
     }
 
     // 1. Find all matching file relative paths
     const matchingFilePaths = new Set<string>();
-    rows.forEach(row => {
+    baseRows.forEach(row => {
       if (!row.isDirectory) {
         let isMatch = false;
         if (filter === 'diff') isMatch = row.status !== 'identical';
@@ -566,7 +572,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
     });
 
     // 3. Keep matching files and their parent directory rows
-    return rows.filter(row => {
+    return baseRows.filter(row => {
       if (!isRowVisible(row.relativePath)) return false;
 
       if (row.isDirectory) {
@@ -574,7 +580,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
       }
       return matchingFilePaths.has(row.relativePath);
     });
-  }, [rows, filter, expandedPaths]);
+  }, [rows, filter, expandedPaths, showHidden]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -752,6 +758,16 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               <span>Refresh</span>
+            </button>
+            <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
+            <button
+              onClick={() => setShowHidden(prev => !prev)}
+              className={`btn ${showHidden ? 'btn-primary' : ''}`}
+              style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: showHidden ? 'white' : 'var(--text-secondary)' }}
+              title={showHidden ? '숨김 파일 숨기기 (Hide Hidden Files)' : '숨김 파일 표시 (Show Hidden Files)'}
+            >
+              {showHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+              <span>{showHidden ? '숨김 파일 표시 중' : '숨김 파일 숨김'}</span>
             </button>
           </div>
 
@@ -1010,6 +1026,7 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
                           cursor: 'pointer',
                           alignItems: 'stretch',
                           boxShadow: isSelected ? 'inset 0 0 0 1px #6366f1' : 'none',
+                          opacity: row.isHidden ? 0.65 : 1,
                         }}
                         className="hover:bg-white/5 transition-colors"
                       >

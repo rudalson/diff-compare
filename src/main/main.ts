@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'child_process';
 import { runFileCompare } from './diffEngine';
 
 let mainWindow: BrowserWindow | null = null;
@@ -139,6 +140,34 @@ interface FileNode {
   isDirectory: boolean;
   size: number;
   mtimeMs: number;
+  isHidden: boolean;
+}
+
+const KNOWN_HIDDEN_NAMES = new Set([
+  'desktop.ini',
+  'thumbs.db',
+  'iconcache.db',
+  '$recycle.bin',
+  'system volume information',
+  'ntuser.dat',
+  'ntuser.dat.log1',
+  'ntuser.dat.log2',
+  'ntuser.ini',
+]);
+
+function getWinHiddenNames(dirPath: string): Set<string> {
+  if (process.platform !== 'win32') return new Set();
+  try {
+    const stdout = execSync(`cmd.exe /c "dir /a:h /b "${dirPath}" 2>nul"`, {
+      encoding: 'utf-8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const lines = stdout.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    return new Set(lines);
+  } catch {
+    return new Set();
+  }
 }
 
 // Scan Directory recursively
@@ -146,8 +175,9 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
   try {
     const results: FileNode[] = [];
 
-    const walk = (currentDir: string) => {
+    const walk = (currentDir: string, parentIsHidden = false) => {
       try {
+        const winHiddenSet = getWinHiddenNames(currentDir);
         const files = fs.readdirSync(currentDir);
         for (const file of files) {
           try {
@@ -155,6 +185,11 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
             const relativePath = path.relative(dirPath, fullPath).replace(/\\/g, '/');
             const stat = fs.statSync(fullPath);
             
+            const isDotFile = file.startsWith('.');
+            const isKnownHidden = KNOWN_HIDDEN_NAMES.has(file.toLowerCase());
+            const isWinHidden = winHiddenSet.has(file.toLowerCase());
+            const isHidden = parentIsHidden || isDotFile || isKnownHidden || isWinHidden;
+
             if (stat.isDirectory()) {
               results.push({
                 name: file,
@@ -163,8 +198,9 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
                 isDirectory: true,
                 size: 0,
                 mtimeMs: stat.mtimeMs,
+                isHidden,
               });
-              walk(fullPath);
+              walk(fullPath, isHidden);
             } else {
               results.push({
                 name: file,
@@ -173,6 +209,7 @@ ipcMain.handle('scan-directory', async (_, dirPath: string) => {
                 isDirectory: false,
                 size: stat.size,
                 mtimeMs: stat.mtimeMs,
+                isHidden,
               });
             }
           } catch (e) {

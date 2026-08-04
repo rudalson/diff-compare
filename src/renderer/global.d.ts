@@ -5,6 +5,7 @@ interface FileNode {
   isDirectory: boolean;
   size: number;
   mtimeMs: number;
+  isHidden?: boolean;
 }
 
 interface DiffRow {
