@@ -623,7 +623,49 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px', position: 'relative' }}>
+      
+      {/* Bottom Center Progress & Toast Notification Overlay */}
+      {(syncingState || syncSuccessMsg) && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '10px 22px',
+            borderRadius: '30px',
+            background: syncingState ? 'rgba(15, 23, 42, 0.94)' : 'rgba(6, 78, 59, 0.94)',
+            border: syncingState ? '1px solid rgba(99, 102, 241, 0.7)' : '1px solid rgba(52, 211, 153, 0.7)',
+            boxShadow: syncingState
+              ? '0 12px 30px -5px rgba(99, 102, 241, 0.5), 0 0 20px rgba(99, 102, 241, 0.3)'
+              : '0 12px 30px -5px rgba(16, 185, 129, 0.5), 0 0 20px rgba(16, 185, 129, 0.3)',
+            backdropFilter: 'blur(12px)',
+            color: 'white',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            pointerEvents: 'auto',
+          }}
+        >
+          {syncingState ? (
+            <>
+              <RefreshCw size={16} className="animate-spin" style={{ color: '#818cf8' }} />
+              <span>
+                Copying "{syncingState.name}" ({syncingState.direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left'})...
+              </span>
+            </>
+          ) : (
+            <>
+              <Check size={16} style={{ color: '#34d399' }} />
+              <span>{syncSuccessMsg}</span>
+            </>
+          )}
+        </div>
+      )}
       
       {/* Folder Picker bar */}
       <div className="glass-panel" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
@@ -823,22 +865,8 @@ export default function FolderCompare({ onOpenTextCompare, updateTitle, initialL
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {syncingState && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 600 }}>
-                <RefreshCw size={13} className="animate-spin" />
-                <span>Copying "{syncingState.name}" ({syncingState.direction === 'left-to-right' ? 'Left ➔ Right' : 'Right ➔ Left'})...</span>
-              </div>
-            )}
-            {syncSuccessMsg && !syncingState && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#34d399', fontWeight: 600 }}>
-                <Check size={13} />
-                <span>{syncSuccessMsg}</span>
-              </div>
-            )}
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Double click a file to open file comparison
-            </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Double click a file to open file comparison
           </div>
         </div>
       )}
