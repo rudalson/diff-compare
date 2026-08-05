@@ -29,12 +29,16 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
   const [stats, setStats] = useState<{added: number, removed: number, modified: number, unchanged: number}>({added: 0, removed: 0, modified: 0, unchanged: 0});
   const [leftSaveSuccess, setLeftSaveSuccess] = useState<boolean>(false);
   const [rightSaveSuccess, setRightSaveSuccess] = useState<boolean>(false);
+  const [isLeftDirty, setIsLeftDirty] = useState<boolean>(false);
+  const [isRightDirty, setIsRightDirty] = useState<boolean>(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   const leftPaneRef = useRef<HTMLDivElement>(null);
   const rightPaneRef = useRef<HTMLDivElement>(null);
   const leftLineNumbersRef = useRef<HTMLDivElement>(null);
   const rightLineNumbersRef = useRef<HTMLDivElement>(null);
-  const activeScroll = useRef<'left' | 'right' | null>(null);
+  const mergeColumnRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef<boolean>(false);
 
   const rowsToDisplay = useMemo(() => {
     return diffRows
@@ -54,19 +58,35 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
     }
   }, [initialLeftPath, initialRightPath]);
 
+  const saveAllFiles = async () => {
+    let savedCount = 0;
+    if (isLeftDirty) {
+      await saveFile('left');
+      savedCount++;
+    }
+    if (isRightDirty) {
+      await saveFile('right');
+      savedCount++;
+    }
+    if (savedCount > 0) {
+      setSaveSuccessMsg('Saved all modified files successfully');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
-        return;
-      }
       if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r')) {
         e.preventDefault();
         runCompare();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveAllFiles();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [leftPath, rightPath]);
+  }, [leftPath, rightPath, isLeftDirty, isRightDirty, diffRows]);
 
   const selectLeftFile = async () => {
     const startPath = leftPath || localStorage.getItem('tinydiff_last_left_file') || undefined;
@@ -105,6 +125,8 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
       const result = await window.api.compareFiles(leftPath, rightPath);
       setDiffRows(result.rows);
       setStats(result.stats);
+      setIsLeftDirty(false);
+      setIsRightDirty(false);
     } catch (err: any) {
       setError(err.message || 'Error occurred while comparing files.');
     } finally {
@@ -114,22 +136,36 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
   // Sync scroll implementation
   const handleScroll = (source: 'left' | 'right') => {
+    if (isSyncingScroll.current) return;
+    isSyncingScroll.current = true;
+
     const srcRef = source === 'left' ? leftPaneRef : rightPaneRef;
-    const destRef = source === 'left' ? rightPaneRef : leftPaneRef;
-    const srcNumsRef = source === 'left' ? leftLineNumbersRef : rightLineNumbersRef;
-    const destNumsRef = source === 'left' ? rightLineNumbersRef : leftLineNumbersRef;
+    if (srcRef.current) {
+      const scrollTop = srcRef.current.scrollTop;
+      const scrollLeft = srcRef.current.scrollLeft;
 
-    if (activeScroll.current === source && srcRef.current && destRef.current) {
-      destRef.current.scrollTop = srcRef.current.scrollTop;
-      destRef.current.scrollLeft = srcRef.current.scrollLeft;
-      
-      if (srcNumsRef.current) srcNumsRef.current.scrollTop = srcRef.current.scrollTop;
-      if (destNumsRef.current) destNumsRef.current.scrollTop = srcRef.current.scrollTop;
+      if (leftPaneRef.current && source !== 'left') {
+        leftPaneRef.current.scrollTop = scrollTop;
+        leftPaneRef.current.scrollLeft = scrollLeft;
+      }
+      if (rightPaneRef.current && source !== 'right') {
+        rightPaneRef.current.scrollTop = scrollTop;
+        rightPaneRef.current.scrollLeft = scrollLeft;
+      }
+      if (leftLineNumbersRef.current) {
+        leftLineNumbersRef.current.scrollTop = scrollTop;
+      }
+      if (rightLineNumbersRef.current) {
+        rightLineNumbersRef.current.scrollTop = scrollTop;
+      }
+      if (mergeColumnRef.current) {
+        mergeColumnRef.current.scrollTop = scrollTop;
+      }
     }
-  };
 
-  const handleMouseEnter = (pane: 'left' | 'right') => {
-    activeScroll.current = pane;
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false;
+    });
   };
 
   // Merge operations
@@ -139,20 +175,20 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
     if (direction === 'left-to-right') {
       target.rightContent = target.leftContent;
-      // If it was removed on left but copied right, it means the right side now has this line
       if (target.type === 'removed') {
         target.type = 'unchanged';
       } else if (target.type === 'modified') {
         target.type = 'unchanged';
       }
+      setIsRightDirty(true);
     } else {
       target.leftContent = target.rightContent;
-      // If it was added on right but copied left, it means the left side now has this line
       if (target.type === 'added') {
         target.type = 'unchanged';
       } else if (target.type === 'modified') {
         target.type = 'unchanged';
       }
+      setIsLeftDirty(true);
     }
     setDiffRows(updated);
     recalcStats(updated);
@@ -179,8 +215,10 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
     if (side === 'left') {
       target.leftContent = text;
+      setIsLeftDirty(true);
     } else {
       target.rightContent = text;
+      setIsRightDirty(true);
     }
 
     // Mark as modified if they don't match
@@ -205,10 +243,8 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
       .filter((_, idx) => {
         const row = diffRows[idx];
         if (side === 'left') {
-          // If it was 'added' (right only), it has no line number on left, meaning it shouldn't exist in left file
           return row.type !== 'added';
         } else {
-          // If it was 'removed' (left only), it has no line number on right, meaning it shouldn't exist in right file
           return row.type !== 'removed';
         }
       })
@@ -216,21 +252,55 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
     try {
       await window.api.writeFile(path, content);
+      const filename = path.split(/[\\/]/).pop() || (side === 'left' ? 'Left File' : 'Right File');
       if (side === 'left') {
         setLeftSaveSuccess(true);
+        setIsLeftDirty(false);
         setTimeout(() => setLeftSaveSuccess(false), 2000);
       } else {
         setRightSaveSuccess(true);
+        setIsRightDirty(false);
         setTimeout(() => setRightSaveSuccess(false), 2000);
       }
+      setSaveSuccessMsg(`Successfully saved "${filename}"`);
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
     } catch (err: any) {
       setError(`Failed to save: ${err.message}`);
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px', position: 'relative' }}>
       
+      {/* Bottom Center Toast Notification Overlay (FolderCompare Style) */}
+      {saveSuccessMsg && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '10px 22px',
+            borderRadius: '30px',
+            background: 'rgba(6, 78, 59, 0.94)',
+            border: '1px solid rgba(52, 211, 153, 0.7)',
+            boxShadow: '0 12px 30px -5px rgba(16, 185, 129, 0.5), 0 0 20px rgba(16, 185, 129, 0.3)',
+            backdropFilter: 'blur(12px)',
+            color: 'white',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            pointerEvents: 'auto',
+          }}
+        >
+          <Check size={16} style={{ color: '#34d399' }} />
+          <span>{saveSuccessMsg}</span>
+        </div>
+      )}
+
       {/* File Path Picker bar */}
       <div className="glass-panel" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -327,18 +397,47 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
             onClick={() => saveFile('left')}
             className="btn"
             style={{
-              padding: '6px 12px',
+              padding: '6px 14px',
               fontSize: '0.75rem',
-              color: leftSaveSuccess ? '#10b981' : 'var(--text-primary)',
-              borderColor: leftSaveSuccess ? '#10b981' : 'var(--border-color)',
+              fontWeight: isLeftDirty ? 600 : 400,
+              background: isLeftDirty ? '#6366f1' : 'transparent',
+              color: isLeftDirty ? 'white' : leftSaveSuccess ? '#10b981' : 'var(--text-primary)',
+              borderColor: isLeftDirty ? '#6366f1' : leftSaveSuccess ? '#10b981' : 'var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
+            title="Save Left File (Ctrl+S)"
           >
             {leftSaveSuccess ? <Check size={14} /> : <Save size={14} />}
-            {leftSaveSuccess ? 'Left Saved!' : 'Save Left File'}
+            <span>{leftSaveSuccess ? 'Left Saved!' : isLeftDirty ? 'Save Left File ●' : 'Save Left File'}</span>
           </button>
 
-          {/* Center: View Mode Toggle & Stats */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* Center: View Mode Toggle, Stats & Save Both */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {(isLeftDirty || isRightDirty) && (
+              <button
+                onClick={saveAllFiles}
+                className="btn"
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '0.75rem',
+                  background: '#6366f1',
+                  borderColor: '#6366f1',
+                  color: 'white',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 10px rgba(99, 102, 241, 0.35)',
+                }}
+                title="Save both files (Ctrl+S)"
+              >
+                <Save size={14} />
+                <span>Save Both Files (Ctrl+S)</span>
+              </button>
+            )}
+
             <div style={{ display: 'flex', gap: '2px', background: 'rgba(0, 0, 0, 0.25)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
               <button
                 onClick={() => setViewMode('all')}
@@ -405,14 +504,20 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
             onClick={() => saveFile('right')}
             className="btn"
             style={{
-              padding: '6px 12px',
+              padding: '6px 14px',
               fontSize: '0.75rem',
-              color: rightSaveSuccess ? '#10b981' : 'var(--text-primary)',
-              borderColor: rightSaveSuccess ? '#10b981' : 'var(--border-color)',
+              fontWeight: isRightDirty ? 600 : 400,
+              background: isRightDirty ? '#10b981' : 'transparent',
+              color: isRightDirty ? 'white' : rightSaveSuccess ? '#10b981' : 'var(--text-primary)',
+              borderColor: isRightDirty ? '#10b981' : rightSaveSuccess ? '#10b981' : 'var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
+            title="Save Right File (Ctrl+S)"
           >
             {rightSaveSuccess ? <Check size={14} /> : <Save size={14} />}
-            {rightSaveSuccess ? 'Right Saved!' : 'Save Right File'}
+            <span>{rightSaveSuccess ? 'Right Saved!' : isRightDirty ? 'Save Right File ●' : 'Save Right File'}</span>
           </button>
         </div>
       )}
@@ -466,11 +571,11 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   return (
                     <Fragment key={row.originalIndex}>
                       {showDivider && (
-                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                        <div style={{ height: '20px', minHeight: '20px', maxHeight: '20px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
                           ···
                         </div>
                       )}
-                      <div style={{ height: '22px', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400 }}>
+                      <div style={{ height: '22px', minHeight: '22px', maxHeight: '22px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400, lineHeight: '22px' }}>
                         {row.type !== 'added' ? row.leftLineNumber : ''}
                       </div>
                     </Fragment>
@@ -482,7 +587,6 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
               <div
                 ref={leftPaneRef}
                 onScroll={() => handleScroll('left')}
-                onMouseEnter={() => handleMouseEnter('left')}
                 style={{
                   flex: 1,
                   overflow: 'auto',
@@ -515,7 +619,7 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   return (
                     <Fragment key={row.originalIndex}>
                       {showDivider && (
-                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
+                        <div style={{ height: '20px', minHeight: '20px', maxHeight: '20px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
                           ··· {skippedCount} unchanged {skippedCount === 1 ? 'line' : 'lines'} omitted ···
                         </div>
                       )}
@@ -523,11 +627,16 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                         style={{
                           backgroundColor: bg,
                           borderLeft: borderLeft,
+                          height: '22px',
                           minHeight: '22px',
+                          maxHeight: '22px',
+                          flexShrink: 0,
+                          boxSizing: 'border-box',
                           paddingLeft: '9px',
                           paddingRight: '12px',
                           display: 'flex',
                           alignItems: 'center',
+                          overflow: 'hidden',
                         }}
                       >
                         {row.type !== 'added' ? (
@@ -542,8 +651,12 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                               fontFamily: 'inherit',
                               fontSize: 'inherit',
                               width: '100%',
+                              height: '22px',
+                              lineHeight: '22px',
                               outline: 'none',
                               padding: 0,
+                              margin: 0,
+                              boxSizing: 'border-box',
                               fontWeight: row.type !== 'unchanged' ? 500 : 400,
                             }}
                           />
@@ -559,8 +672,10 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
 
             {/* MERGE BUTTONS COLUMN */}
             <div
+              ref={mergeColumnRef}
               style={{
-                width: '32px',
+                width: '46px',
+                minWidth: '46px',
                 backgroundColor: 'rgba(0,0,0,0.25)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -569,6 +684,7 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                 borderRight: '1px solid var(--border-color)',
                 userSelect: 'none',
                 lineHeight: '22px',
+                overflow: 'hidden',
               }}
             >
               {rowsToDisplay.map((row, displayIdx) => {
@@ -579,53 +695,71 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                 return (
                   <Fragment key={row.originalIndex}>
                     {showDivider && (
-                      <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                      <div style={{ height: '20px', minHeight: '20px', maxHeight: '20px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
                         ···
                       </div>
                     )}
                     <div
                       style={{
                         height: '22px',
+                        minHeight: '22px',
+                        maxHeight: '22px',
+                        flexShrink: 0,
+                        boxSizing: 'border-box',
+                        overflow: 'hidden',
                         display: 'flex',
+                        flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '2px',
+                        width: '100%',
+                        flexWrap: 'nowrap',
                       }}
                     >
                       {row.type !== 'unchanged' && (
-                        <div style={{ display: 'flex' }}>
+                        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px', flexWrap: 'nowrap' }}>
                           {/* Copy Right to Left */}
                           {row.type !== 'removed' && (
                             <button
                               onClick={() => handleMergeLine(row.originalIndex, 'right-to-left')}
-                              title="Copy line to Left"
+                              title="Copy Right line to Left (오른쪽 ➔ 왼쪽 복사)"
                               style={{
                                 border: 'none',
-                                background: 'transparent',
+                                background: 'rgba(99, 102, 241, 0.2)',
+                                borderRadius: '3px',
                                 cursor: 'pointer',
                                 color: 'var(--diff-modified-text)',
+                                width: '18px',
+                                height: '18px',
                                 padding: 0,
-                                display: 'flex',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
-                              <ChevronLeft size={12} />
+                              <ChevronLeft size={13} />
                             </button>
                           )}
                           {/* Copy Left to Right */}
                           {row.type !== 'added' && (
                             <button
                               onClick={() => handleMergeLine(row.originalIndex, 'left-to-right')}
-                              title="Copy line to Right"
+                              title="Copy Left line to Right (왼쪽 ➔ 오른쪽 복사)"
                               style={{
                                 border: 'none',
-                                background: 'transparent',
+                                background: 'rgba(99, 102, 241, 0.2)',
+                                borderRadius: '3px',
                                 cursor: 'pointer',
                                 color: 'var(--diff-modified-text)',
+                                width: '18px',
+                                height: '18px',
                                 padding: 0,
-                                display: 'flex',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
-                              <ChevronRight size={12} />
+                              <ChevronRight size={13} />
                             </button>
                           )}
                         </div>
@@ -675,11 +809,11 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   return (
                     <Fragment key={row.originalIndex}>
                       {showDivider && (
-                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
+                        <div style={{ height: '20px', minHeight: '20px', maxHeight: '20px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: 'var(--text-muted)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)' }}>
                           ···
                         </div>
                       )}
-                      <div style={{ height: '22px', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400 }}>
+                      <div style={{ height: '22px', minHeight: '22px', maxHeight: '22px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: numColor, backgroundColor: numBg, fontWeight: row.type !== 'unchanged' ? 600 : 400, lineHeight: '22px' }}>
                         {row.type !== 'removed' ? row.rightLineNumber : ''}
                       </div>
                     </Fragment>
@@ -691,7 +825,6 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
               <div
                 ref={rightPaneRef}
                 onScroll={() => handleScroll('right')}
-                onMouseEnter={() => handleMouseEnter('right')}
                 style={{
                   flex: 1,
                   overflow: 'auto',
@@ -724,7 +857,7 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                   return (
                     <Fragment key={row.originalIndex}>
                       {showDivider && (
-                        <div style={{ height: '20px', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
+                        <div style={{ height: '20px', minHeight: '20px', maxHeight: '20px', flexShrink: 0, boxSizing: 'border-box', overflow: 'hidden', color: 'var(--text-muted)', fontSize: '0.7rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', paddingLeft: '12px', background: 'rgba(0,0,0,0.3)', borderTop: '1px dashed var(--border-color)', borderBottom: '1px dashed var(--border-color)', opacity: 0.7 }}>
                           ··· {skippedCount} unchanged {skippedCount === 1 ? 'line' : 'lines'} omitted ···
                         </div>
                       )}
@@ -732,11 +865,16 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                         style={{
                           backgroundColor: bg,
                           borderLeft: borderLeft,
+                          height: '22px',
                           minHeight: '22px',
+                          maxHeight: '22px',
+                          flexShrink: 0,
+                          boxSizing: 'border-box',
                           paddingLeft: '9px',
                           paddingRight: '12px',
                           display: 'flex',
                           alignItems: 'center',
+                          overflow: 'hidden',
                         }}
                       >
                         {row.type !== 'removed' ? (
@@ -751,8 +889,12 @@ export default function TextCompare({ initialLeftPath, initialRightPath, updateT
                               fontFamily: 'inherit',
                               fontSize: 'inherit',
                               width: '100%',
+                              height: '22px',
+                              lineHeight: '22px',
                               outline: 'none',
                               padding: 0,
+                              margin: 0,
+                              boxSizing: 'border-box',
                               fontWeight: row.type !== 'unchanged' ? 500 : 400,
                             }}
                           />
